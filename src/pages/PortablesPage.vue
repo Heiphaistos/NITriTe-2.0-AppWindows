@@ -536,10 +536,10 @@ async function refreshInstalled() {
   overflow: hidden;
 }
 .port-favicon {
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: 0;
 }
 .port-popular-star {
   position: absolute;

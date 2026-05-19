@@ -72,7 +72,8 @@ const categoryIcons: Record<string, any> = {
   gaming: Gamepad2,
 };
 
-function normalizeStr(s: string) {
+function normalizeStr(s: string | null | undefined) {
+  if (s == null) return "";
   return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
@@ -85,9 +86,9 @@ const filteredApps = computed(() => {
     const q = searchQuery.value.toLowerCase();
     result = result.filter(
       (a) =>
-        a.name.toLowerCase().includes(q) ||
-        a.description.toLowerCase().includes(q) ||
-        a.winget_id.toLowerCase().includes(q)
+        (a.name ?? "").toLowerCase().includes(q) ||
+        (a.description ?? "").toLowerCase().includes(q) ||
+        (a.winget_id ?? "").toLowerCase().includes(q)
     );
   }
   return result;
@@ -300,7 +301,8 @@ function getCategoryIcon(category: string) {
 // Set des IDs d'apps dont l'icône a échoué → bascule sur l'icône Lucide
 const iconErrors = ref<Set<string>>(new Set());
 
-function sanitizeWingetId(id: string): string {
+function sanitizeWingetId(id: string | null | undefined): string {
+  if (id == null) return "unknown";
   return id.toLowerCase().replace(/[^a-z0-9]/g, '_');
 }
 
