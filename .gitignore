@@ -59,5 +59,9 @@ null
 undefined
 NUL
 
-# --- Drivers lourds SDI (> 100 MB, limite GitHub) ---
-src-tauri/update/
+# --- Logs runtime (ne jamais commit) ---
+.logs/
+
+# --- SDI resources (heavy driver packs) ---
+src-tauri/resources/sdi/drivers_RUS/
+src-tauri/resources/sdi/indexes/

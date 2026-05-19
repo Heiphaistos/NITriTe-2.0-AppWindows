@@ -300,6 +300,10 @@ function getCategoryIcon(category: string) {
 // Set des IDs d'apps dont l'icône a échoué → bascule sur l'icône Lucide
 const iconErrors = ref<Set<string>>(new Set());
 
+function sanitizeWingetId(id: string): string {
+  return id.toLowerCase().replace(/[^a-z0-9]/g, '_');
+}
+
 // Map winget_id → domaine pour les apps sans URL dans programs.json
 const WINGET_DOMAIN: Record<string, string> = {
   // Navigateurs
@@ -450,8 +454,11 @@ function resolveAppDomain(app: AppInfo): string {
   return "";
 }
 
-// Ordre de priorité : Google Favicons (sz=64) → DuckDuckGo → icône Lucide
+// Ordre de priorité : local → Google Favicons → DuckDuckGo → icône Lucide
 function appFaviconUrl(app: AppInfo): string {
+  if (!iconErrors.value.has(app.id + "_local")) {
+    return `/icons/apps/${sanitizeWingetId(app.winget_id)}.png`;
+  }
   const domain = resolveAppDomain(app);
   if (!domain) return "";
   if (iconErrors.value.has(app.id + "_google")) {
@@ -463,7 +470,9 @@ function appFaviconUrl(app: AppInfo): string {
 
 function onIconError(event: Event, app: AppInfo) {
   const src = (event.target as HTMLImageElement).src;
-  if (src.includes("google.com/s2/favicons")) {
+  if (src.includes("/icons/apps/")) {
+    iconErrors.value = new Set([...iconErrors.value, app.id + "_local"]);
+  } else if (src.includes("google.com/s2/favicons")) {
     iconErrors.value = new Set([...iconErrors.value, app.id + "_google"]);
   } else {
     iconErrors.value = new Set([...iconErrors.value, app.id + "_ddg"]);

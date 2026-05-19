@@ -23,6 +23,9 @@ const activeCategory = ref("Tous");
 const showPopular    = ref(false);
 const loading        = ref(false);
 
+// 'local' = local icon failed, try remote; 'all' = both failed, show lucide
+const iconFailed = ref<Record<string, 'local' | 'all'>>({});
+
 // ── Favoris (localStorage) ────────────────────────────────────
 const FAV_KEY    = "nitrite-portables-fav";
 const RECENT_KEY = "nitrite-portables-recent";
@@ -74,11 +77,31 @@ const CAT_ICONS: Record<string, any> = {
 };
 const catIcon = (cat: string) => CAT_ICONS[cat] ?? Package;
 
-function faviconUrl(appUrl: string): string {
-  try {
-    const host = new URL(appUrl).hostname;
-    return `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
-  } catch { return ""; }
+// Retourne l'URL de l'icône : local d'abord, puis remote, puis "" (→ lucide icon)
+function portableIconSrc(app: PortableApp): string {
+  const state = iconFailed.value[app.id];
+  if (!state) {
+    return `/icons/portables/${app.id}.png`;
+  }
+  if (state === 'local' && app.url) {
+    try {
+      const host = new URL(app.url).hostname;
+      return `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+    } catch { return ""; }
+  }
+  return ""; // affiche lucide
+}
+
+function onPortableIconError(event: Event, app: PortableApp) {
+  const src = (event.target as HTMLImageElement).src;
+  if (src.includes('/icons/portables/')) {
+    // Essai local échoué → tente remote
+    iconFailed.value = { ...iconFailed.value, [app.id]: 'local' };
+  } else {
+    // Remote aussi échoué → affiche lucide
+    iconFailed.value = { ...iconFailed.value, [app.id]: 'all' };
+    (event.target as HTMLImageElement).style.display = 'none';
+  }
 }
 
 // ── Compteurs par catégorie ───────────────────────────────────
@@ -307,10 +330,19 @@ async function refreshInstalled() {
         :class="{ 'port-card--installed': installedMap[app.id] }"
       >
         <div class="port-card-icon">
-          <img v-if="app.url" :src="faviconUrl(app.url)" :alt="app.name"
-            class="port-favicon" loading="lazy"
-            @error="($event.target as HTMLImageElement).style.display='none'" />
-          <component v-if="!app.url" :is="catIcon(app.category)" :size="22" />
+          <img
+            v-if="portableIconSrc(app)"
+            :src="portableIconSrc(app)"
+            :alt="app.name"
+            class="port-favicon"
+            loading="lazy"
+            @error="onPortableIconError($event, app)"
+          />
+          <component
+            v-if="!portableIconSrc(app)"
+            :is="catIcon(app.category)"
+            :size="22"
+          />
           <Star v-if="app.popular" class="port-popular-star" :size="10" />
         </div>
 
