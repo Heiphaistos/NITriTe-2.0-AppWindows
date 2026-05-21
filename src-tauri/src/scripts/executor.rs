@@ -6,6 +6,7 @@ use std::os::windows::process::CommandExt;
 use tauri::Emitter;
 
 use crate::error::NiTriTeError;
+use crate::scripts::validator::validate_script;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ScriptResult {
@@ -29,6 +30,16 @@ pub fn execute_script(
     script_type: &str,
     window: &tauri::Window,
 ) -> Result<ScriptResult, NiTriTeError> {
+    // Bloquer les scripts classifiés danger avant toute exécution
+    let validation = validate_script(content.to_string(), script_type.to_string());
+    if validation.risk_level == "danger" {
+        let reasons = validation.warnings.join(", ");
+        tracing::warn!("execute_script BLOQUÉ (danger): {}", reasons);
+        return Err(NiTriTeError::CommandDenied(
+            format!("Script bloqué (risque critique): {}", reasons),
+        ));
+    }
+
     // Log de chaque exécution pour traçabilité
     tracing::info!(
         "execute_script: type={} length={} preview={:?}",

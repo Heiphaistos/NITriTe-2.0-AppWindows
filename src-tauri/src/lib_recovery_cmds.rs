@@ -392,10 +392,39 @@ async fn scan_lost_partitions_cmd(
         .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
-// === Save content to arbitrary path (dialog-driven export) ===
+// === Save content to path (dialog-driven export, répertoires autorisés uniquement) ===
+
+fn is_path_allowed(path: &std::path::Path) -> bool {
+    let allowed_roots: Vec<std::path::PathBuf> = [
+        dirs::document_dir(),
+        dirs::desktop_dir(),
+        dirs::download_dir(),
+        std::env::temp_dir().into(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    allowed_roots.iter().any(|root| path.starts_with(root))
+}
 
 #[tauri::command]
 async fn save_content_to_path(path: String, content: String) -> Result<(), NiTriTeError> {
+    let p = std::path::Path::new(&path);
+    if !is_path_allowed(p) {
+        return Err(NiTriTeError::CommandDenied(
+            format!("Écriture interdite hors des répertoires autorisés: {}", path),
+        ));
+    }
+    // Interdire les extensions exécutables
+    let blocked_exts = ["exe", "dll", "bat", "cmd", "ps1", "vbs", "hta", "scr", "msi", "inf"];
+    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+        if blocked_exts.contains(&ext.to_lowercase().as_str()) {
+            return Err(NiTriTeError::CommandDenied(
+                format!("Extension exécutable interdite: .{}", ext),
+            ));
+        }
+    }
     tokio::fs::write(&path, content.as_bytes())
         .await
         .map_err(|e| NiTriTeError::System(e.to_string()))
@@ -424,26 +453,68 @@ async fn save_config(
 
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), NiTriTeError> {
+    let allowed = url.starts_with("http://")
+        || url.starts_with("https://")
+        || url.starts_with("ms-settings:")
+        || url.starts_with("ms-windows-store:");
+    if !allowed {
+        return Err(NiTriTeError::CommandDenied(
+            format!("Schéma d'URL non autorisé: {}", url),
+        ));
+    }
     open::that(&url).map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 #[tauri::command]
 async fn open_path(path: String) -> Result<(), NiTriTeError> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(NiTriTeError::System(format!("Chemin introuvable: {}", path)));
+    }
+    // Refuser les exécutables
+    let blocked_exts = ["exe", "bat", "cmd", "ps1", "vbs", "hta", "scr"];
+    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+        if blocked_exts.contains(&ext.to_lowercase().as_str()) {
+            return Err(NiTriTeError::CommandDenied(
+                format!("Ouverture d'exécutable interdite: .{}", ext),
+            ));
+        }
+    }
     open::that(&path).map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 // === Execute tool command (cmd or ms-settings) ===
 
+/// Vérifie que la commande ne contient pas de métacaractères CMD/PS dangereux
+fn has_shell_metacharacters(cmd: &str) -> bool {
+    ["&", "|", ";", ">", "<", "`", "$(", "%CMD%", "^"].iter().any(|c| cmd.contains(c))
+}
+
 #[tauri::command]
 async fn execute_tool(command: String, is_url: bool) -> Result<(), NiTriTeError> {
     if is_url || command.starts_with("ms-settings:") || command.starts_with("http") {
+        // Déléguer à open_url pour la validation de schéma
+        let allowed = command.starts_with("http://")
+            || command.starts_with("https://")
+            || command.starts_with("ms-settings:")
+            || command.starts_with("ms-windows-store:");
+        if !allowed {
+            return Err(NiTriTeError::CommandDenied(
+                format!("Schéma non autorisé: {}", command),
+            ));
+        }
         open::that(&command).map_err(|e| NiTriTeError::System(e.to_string()))
     } else {
+        if has_shell_metacharacters(&command) {
+            return Err(NiTriTeError::CommandDenied(
+                "Métacaractères shell détectés dans la commande".into(),
+            ));
+        }
         tokio::task::spawn_blocking(move || {
             // Ouvre un terminal visible avec /K pour garder la fenêtre ouverte après la commande
             std::process::Command::new("cmd")
                 .args(["/C", "start", "cmd", "/K", &command])
-                .creation_flags(0x08000000) // masque uniquement le cmd lanceur, pas le terminal fils
+                .creation_flags(0x08000000)
                 .spawn()
                 .map_err(|e| NiTriTeError::System(e.to_string()))?;
             Ok(())

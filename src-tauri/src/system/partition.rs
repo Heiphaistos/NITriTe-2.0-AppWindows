@@ -172,10 +172,18 @@ try {
 // ── Opérations sur partitions (Admin requis) ───────────────────────────────────
 
 pub fn format_partition(letter: String, fs: String, label: String) -> Result<String, String> {
-    let clean = letter.trim_end_matches(':').to_uppercase();
-    if clean == "C" {
-        return Err("Formatage du lecteur système C:\\ interdit.".into());
+    let clean = letter.trim().trim_end_matches(':').to_uppercase();
+    // Bloquer C: et toute lettre de plus d'un caractère (invalide)
+    if clean == "C" || clean.len() != 1 || !clean.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false) {
+        return Err("Lettre de lecteur invalide ou formatage du lecteur système interdit.".into());
     }
+    // Valider le système de fichiers
+    let allowed_fs = ["NTFS", "FAT32", "exFAT", "ReFS"];
+    if !allowed_fs.contains(&fs.to_uppercase().as_str()) {
+        return Err(format!("Système de fichiers non autorisé: {}", fs));
+    }
+    // Limiter le label à 32 caractères (limite NTFS)
+    let label = if label.len() > 32 { label[..32].to_string() } else { label };
     let ps = format!(
         r#"Format-Volume -DriveLetter '{}' -FileSystem '{}' -NewFileSystemLabel '{}' -Confirm:$false -Force | Out-Null; 'OK'"#,
         clean,

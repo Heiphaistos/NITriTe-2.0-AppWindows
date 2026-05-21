@@ -277,6 +277,13 @@ async fn get_startup_programs() -> Result<Vec<maintenance::cleanup::StartupEntry
 
 #[tauri::command]
 async fn run_system_command(cmd: String, args: Vec<String>) -> Result<maintenance::commands::CommandResult, NiTriTeError> {
+    // Valider via whitelist avant toute exécution
+    let full_cmd = if args.is_empty() {
+        cmd.clone()
+    } else {
+        format!("{} {}", cmd, args.join(" "))
+    };
+    ai::tool_calling::is_safe(&full_cmd)?;
     tokio::task::spawn_blocking(move || {
         let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         maintenance::commands::execute_system_command(&cmd, &args_refs, 60)
