@@ -332,29 +332,29 @@ pub fn get_nearby_wifi() -> Result<Vec<WifiNetwork>, String> {
         let line = line.trim();
         if line.starts_with("SSID") && !line.starts_with("SSID Name") && !line.starts_with("BSSID") {
             if !current.ssid.is_empty() { networks.push(current); current = WifiNetwork { ssid: String::new(), bssid: String::new(), signal_percent: 0, channel: 0, band: String::new(), authentication: String::new(), network_type: String::new(), radio_type: String::new() }; }
-            if let Some(v) = line.splitn(2, ':').nth(1) { current.ssid = v.trim().to_string(); }
+            if let Some(v) = line.split_once(':').map(|x| x.1) { current.ssid = v.trim().to_string(); }
         } else if line.starts_with("Network type") {
-            if let Some(v) = line.splitn(2, ':').nth(1) { current.network_type = v.trim().to_string(); }
+            if let Some(v) = line.split_once(':').map(|x| x.1) { current.network_type = v.trim().to_string(); }
         } else if line.starts_with("Authentication") {
-            if let Some(v) = line.splitn(2, ':').nth(1) { current.authentication = v.trim().to_string(); }
+            if let Some(v) = line.split_once(':').map(|x| x.1) { current.authentication = v.trim().to_string(); }
         } else if line.starts_with("BSSID 1") {
-            if let Some(v) = line.splitn(2, ':').nth(1) { current.bssid = v.trim().to_string(); }
+            if let Some(v) = line.split_once(':').map(|x| x.1) { current.bssid = v.trim().to_string(); }
         } else if line.starts_with("Signal") {
-            if let Some(v) = line.splitn(2, ':').nth(1) {
+            if let Some(v) = line.split_once(':').map(|x| x.1) {
                 current.signal_percent = v.trim().trim_end_matches('%').parse().unwrap_or(0);
             }
         } else if line.starts_with("Radio type") {
-            if let Some(v) = line.splitn(2, ':').nth(1) {
+            if let Some(v) = line.split_once(':').map(|x| x.1) {
                 let rt = v.trim().to_string();
                 current.band = if rt.contains("5") { "5 GHz".to_string() } else { "2.4 GHz".to_string() };
                 current.radio_type = rt;
             }
         } else if line.starts_with("Channel") {
-            if let Some(v) = line.splitn(2, ':').nth(1) { current.channel = v.trim().parse().unwrap_or(0); }
+            if let Some(v) = line.split_once(':').map(|x| x.1) { current.channel = v.trim().parse().unwrap_or(0); }
         }
     }
     if !current.ssid.is_empty() { networks.push(current); }
-    networks.sort_by(|a, b| b.signal_percent.cmp(&a.signal_percent));
+    networks.sort_by_key(|a| std::cmp::Reverse(a.signal_percent));
     Ok(networks)
 }
 
@@ -389,7 +389,7 @@ pub fn apply_turbo_mode(mode: String) -> Result<TurboResult, String> {
             if run("powercfg /setactive a1841308-3541-4fab-bc81-f71556f20b4a 2>&1").is_ok() { done.push("Plan d'alimentation : Économie d'énergie".into()); }
             if run("(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,50) 2>&1; 'ok'").is_ok() { done.push("Luminosité réduite à 50%".into()); }
         }
-        "turbo" | _ => {
+        _ => {
             if run("powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>&1").is_ok() { done.push("Plan d'alimentation : Haute performance".into()); }
             if run("Clear-DnsClientCache; 'ok'").is_ok() { done.push("Cache DNS vidé".into()); }
             if run("$mem = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(0); [System.Runtime.InteropServices.Marshal]::FreeHGlobal($mem); [System.GC]::Collect(); 'ok'").is_ok() { done.push("Mémoire libérée".into()); }

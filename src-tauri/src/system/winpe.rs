@@ -1,6 +1,5 @@
-/// winpe.rs — Commandes spécifiques au mode Windows PE
-/// Détection, réparation MBR/BCD, SFC offline, reset mot de passe, etc.
-
+//! winpe.rs — Commandes spécifiques au mode Windows PE
+//! Détection, réparation MBR/BCD, SFC offline, reset mot de passe, etc.
 use serde::{Deserialize, Serialize};
 use crate::error::NiTriTeError;
 #[cfg(target_os = "windows")]
@@ -74,9 +73,9 @@ fn detect_winpe() -> bool {
 
 #[tauri::command]
 pub async fn is_winpe_mode() -> Result<bool, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(detect_winpe)
+    tokio::task::spawn_blocking(detect_winpe)
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 #[tauri::command]
@@ -203,9 +202,9 @@ fn collect_pe_drives() -> Vec<PeDrive> {
 
 #[tauri::command]
 pub async fn get_pe_drives() -> Result<Vec<PeDrive>, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(collect_pe_drives)
+    tokio::task::spawn_blocking(collect_pe_drives)
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 // ── Réparation Boot ─────────────────────────────────────────────────────────
@@ -247,30 +246,30 @@ fn run_bootrec(args: &[&str]) -> RepairResult {
 
 #[tauri::command]
 pub async fn repair_mbr() -> Result<RepairResult, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(|| run_bootrec(&["/fixmbr"]))
+    tokio::task::spawn_blocking(|| run_bootrec(&["/fixmbr"]))
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 #[tauri::command]
 pub async fn repair_boot() -> Result<RepairResult, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(|| run_bootrec(&["/fixboot"]))
+    tokio::task::spawn_blocking(|| run_bootrec(&["/fixboot"]))
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 #[tauri::command]
 pub async fn rebuild_bcd() -> Result<RepairResult, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(|| run_bootrec(&["/rebuildbcd"]))
+    tokio::task::spawn_blocking(|| run_bootrec(&["/rebuildbcd"]))
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 #[tauri::command]
 pub async fn scan_os_installations() -> Result<RepairResult, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(|| run_bootrec(&["/scanos"]))
+    tokio::task::spawn_blocking(|| run_bootrec(&["/scanos"]))
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 // ── ChkDsk & SFC Offline ────────────────────────────────────────────────────

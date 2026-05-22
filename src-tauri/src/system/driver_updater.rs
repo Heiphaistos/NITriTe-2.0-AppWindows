@@ -205,9 +205,9 @@ fn parse_inf_meta(content: &str) -> (String, String, String) {
         if !in_version { continue; }
         let low = line.to_lowercase();
         if low.starts_with("provider") {
-            provider = line.splitn(2, '=').nth(1).unwrap_or("").trim().trim_matches('"').trim_matches('%').to_string();
+            provider = line.split_once('=').map(|x| x.1).unwrap_or("").trim().trim_matches('"').trim_matches('%').to_string();
         } else if low.starts_with("driverversion") || low.starts_with("driverver") {
-            let rhs = line.splitn(2, '=').nth(1).unwrap_or("").trim();
+            let rhs = line.split_once('=').map(|x| x.1).unwrap_or("").trim();
             // Format: MM/DD/YYYY,x.x.x.x
             let parts: Vec<&str> = rhs.splitn(2, ',').collect();
             date = parts.first().unwrap_or(&"").trim().to_string();
@@ -321,7 +321,7 @@ pub fn scan_driver_folder(folder_path: String, device_ids: Vec<String>) -> Drive
     }
 
     // Deduplicate matches per device_id (keep best score)
-    matches.sort_by(|a,b| b.score.cmp(&a.score));
+    matches.sort_by_key(|a| std::cmp::Reverse(a.score));
     matches.dedup_by(|a, b| a.device_id == b.device_id);
 
     let devices_with_match = matches.len() as u32;
@@ -455,7 +455,7 @@ try {
 #[tauri::command]
 pub fn install_driver_winupdate(update_id: String) -> DriverInstallResult {
     // Uses Windows Update Agent COM to download + install specific update
-    let uid = update_id.replace('"', "").replace('\'', "");
+    let uid = update_id.replace(['"', '\''], "");
     let ps = format!(r#"
 try {{
     $sess = New-Object -ComObject Microsoft.Update.Session

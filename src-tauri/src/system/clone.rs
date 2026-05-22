@@ -194,7 +194,7 @@ pub fn create_system_image(target_drive: String, window: &tauri::Window) -> Clon
         let window2 = window.clone();
         let reader_thread = std::thread::spawn(move || {
             let br = BufReader::new(stdout);
-            for line in br.lines().flatten() {
+            for line in br.lines().map_while(Result::ok) {
                 // wbadmin : "Creating a backup of volume (C:), copied (X%)."
                 if let Some(pct) = parse_wbadmin_pct(&line) {
                     // Mappe 0-100% sur la plage 10-95%
@@ -209,7 +209,7 @@ pub fn create_system_image(target_drive: String, window: &tauri::Window) -> Clon
         });
 
         // ── Attente de fin de processus ─────────────────────────
-        return match child.wait() {
+        match child.wait() {
             Ok(status) => {
                 let _ = reader_thread.join();
                 let ok   = status.success();
@@ -251,7 +251,7 @@ pub fn create_system_image(target_drive: String, window: &tauri::Window) -> Clon
                     duration_secs: start.elapsed().as_secs(),
                 }
             }
-        };
+        }
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -428,7 +428,7 @@ fn robocopy_message(code: i32, src: &str, dst: &str) -> String {
         2  => "Fichiers supplémentaires en destination (non présents dans source).",
         3  => "Fichiers copiés + extras en destination.",
         4  => "Discordances de fichiers détectées (sans copie).",
-        5  | 6 | 7 => "Copie réussie avec avertissements mineurs.",
+        5..=7 => "Copie réussie avec avertissements mineurs.",
         8  => "Certains fichiers n'ont pas pu être copiés (fichiers verrouillés ou accès refusé).",
         16 => "Erreur fatale — aucun fichier copié. Vérifiez source et destination.",
         _  => "Opération terminée.",

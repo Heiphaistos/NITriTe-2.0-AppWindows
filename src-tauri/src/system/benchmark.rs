@@ -132,8 +132,7 @@ pub async fn run_disk_bench(drive: Option<String>) -> BenchResult {
         let d = drive
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "C:".to_string())
-            .replace('"', "")
-            .replace('\'', "");
+            .replace(['"', '\''], "");
 
         let rand_suffix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

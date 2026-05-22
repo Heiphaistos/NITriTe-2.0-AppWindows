@@ -72,8 +72,8 @@ try {
             let j = if t.starts_with('{') { format!("[{}]", t) } else { t.to_string() };
             serde_json::from_str::<Vec<serde_json::Value>>(&j).ok()
         })
-        .map(|vals| vals.into_iter().filter_map(|v| {
-            Some(DiskSmartInfo {
+        .map(|vals| vals.into_iter().map(|v| {
+            DiskSmartInfo {
                 disk_index:          v["disk_index"].as_u64().unwrap_or(0) as u32,
                 label:               v["label"].as_str().unwrap_or("Disque").to_string(),
                 health:              v["health"].as_str().unwrap_or("Unknown").to_string(),
@@ -84,7 +84,7 @@ try {
                 media_type:          v["media_type"].as_str().unwrap_or("HDD").to_string(),
                 wear_level:          v["wear_level"].as_u64().map(|x| x as u32),
                 reallocated_sectors: v["reallocated_sectors"].as_u64().map(|x| x as u32),
-            })
+            }
         }).collect())
         .unwrap_or_default()
 }
@@ -150,8 +150,8 @@ try {
             let j = if t.starts_with('{') { format!("[{}]", t) } else { t.to_string() };
             serde_json::from_str::<Vec<serde_json::Value>>(&j).ok()
         })
-        .map(|vals| vals.into_iter().filter_map(|v| {
-            Some(PartitionDetail {
+        .map(|vals| vals.into_iter().map(|v| {
+            PartitionDetail {
                 disk_index:  v["disk_index"].as_u64().unwrap_or(0) as u32,
                 part_index:  v["part_index"].as_u64().unwrap_or(0) as u32,
                 disk_label:  v["disk_label"].as_str().unwrap_or("").to_string(),
@@ -164,7 +164,7 @@ try {
                 is_system:   v["is_system"].as_bool().unwrap_or(false),
                 is_boot:     v["is_boot"].as_bool().unwrap_or(false),
                 health:      v["health"].as_str().unwrap_or("Unknown").to_string(),
-            })
+            }
         }).collect())
         .unwrap_or_default()
 }
@@ -295,7 +295,7 @@ pub fn backup_mbr(disk_index: u32, output_path: String) -> Result<String, String
         let mut mbr = [0u8; 512];
         f.read_exact(&mut mbr).map_err(|e| format!("Lecture MBR échouée: {}", e))?;
 
-        std::fs::write(&output_path, &mbr)
+        std::fs::write(&output_path, mbr)
             .map_err(|e| format!("Écriture fichier MBR: {}", e))?;
 
         // Vérifie signature MBR (0x55AA en fin de secteur)
@@ -397,15 +397,15 @@ try {{
             let j = if t.starts_with('{') { format!("[{}]", t) } else { t.to_string() };
             serde_json::from_str::<Vec<serde_json::Value>>(&j).ok()
         })
-        .map(|vals| vals.into_iter().filter_map(|v| {
-            Some(LostPartition {
+        .map(|vals| vals.into_iter().map(|v| {
+            LostPartition {
                 disk_index:   v["disk_index"].as_u64().unwrap_or(0) as u32,
                 offset_bytes: v["offset_bytes"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0),
                 size_bytes:   v["size_bytes"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0),
                 signature:    v["signature"].as_str().unwrap_or("").to_string(),
                 fs_hint:      v["fs_hint"].as_str().unwrap_or("").to_string(),
                 description:  v["description"].as_str().unwrap_or("").to_string(),
-            })
+            }
         }).collect())
         .unwrap_or_default()
 }

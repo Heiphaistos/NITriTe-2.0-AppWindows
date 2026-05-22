@@ -59,7 +59,7 @@ fn parse_docker_ps() -> Vec<DockerContainer> {
     text.lines().filter(|l| !l.is_empty()).map(|line| {
         let parts: Vec<&str> = line.splitn(6, '\t').collect();
         DockerContainer {
-            id: parts.get(0).unwrap_or(&"").to_string(),
+            id: parts.first().unwrap_or(&"").to_string(),
             name: parts.get(1).unwrap_or(&"").to_string(),
             image: parts.get(2).unwrap_or(&"").to_string(),
             status: parts.get(3).unwrap_or(&"").to_string(),
@@ -79,7 +79,7 @@ fn parse_docker_images() -> Vec<DockerImage> {
     text.lines().filter(|l| !l.is_empty()).map(|line| {
         let parts: Vec<&str> = line.splitn(5, '\t').collect();
         DockerImage {
-            id: parts.get(0).unwrap_or(&"").to_string(),
+            id: parts.first().unwrap_or(&"").to_string(),
             repository: parts.get(1).unwrap_or(&"").to_string(),
             tag: parts.get(2).unwrap_or(&"").to_string(),
             size: parts.get(3).unwrap_or(&"").to_string(),

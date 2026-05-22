@@ -20,7 +20,7 @@ pub fn collect_system_summary() -> SystemSummary {
     let uptime = System::uptime() as f64 / 3600.0;
     let cpus = sys.cpus();
     let cpu_name = cpus.first().map(|c| c.brand().to_string()).unwrap_or_default();
-    let cpu_cores = sys.physical_core_count().unwrap_or_else(|| cpus.len()) as u32;
+    let cpu_cores = sys.physical_core_count().unwrap_or(cpus.len()) as u32;
     let cpu_usage = sys.global_cpu_usage();
     let total = sys.total_memory() as f64 / 1_073_741_824.0;
     let used = sys.used_memory() as f64 / 1_073_741_824.0;

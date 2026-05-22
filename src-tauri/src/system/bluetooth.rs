@@ -167,7 +167,7 @@ pub fn toggle_bluetooth(enable: bool) -> Result<String, String> {
         if o.status.success() {
             return Ok(msg.to_string());
         }
-        return Err(String::from_utf8_lossy(&o.stderr).to_string());
+        Err(String::from_utf8_lossy(&o.stderr).to_string())
     }
     #[cfg(not(target_os = "windows"))]
     Err("Non disponible".to_string())

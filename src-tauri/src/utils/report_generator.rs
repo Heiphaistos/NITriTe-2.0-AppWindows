@@ -51,7 +51,7 @@ td:last-child {{ color: #e4e4e7; font-family: monospace; font-size: 12px; }}
             html_escape(&section.title)
         ));
         for row in &section.rows {
-            let label = row.get(0).map(|s| s.as_str()).unwrap_or("");
+            let label = row.first().map(|s| s.as_str()).unwrap_or("");
             let value = row.get(1).map(|s| s.as_str()).unwrap_or("");
             html.push_str(&format!(
                 "<tr><td>{}</td><td>{}</td></tr>",
@@ -78,7 +78,7 @@ pub fn generate_md_report(data: ReportData) -> String {
         md.push_str(&format!("## {}\n\n", section.title));
         md.push_str("| Propriété | Valeur |\n|---|---|\n");
         for row in &section.rows {
-            let label = row.get(0).map(|s| s.as_str()).unwrap_or("");
+            let label = row.first().map(|s| s.as_str()).unwrap_or("");
             let value = row.get(1).map(|s| s.as_str()).unwrap_or("");
             md.push_str(&format!("| {} | {} |\n", label, value));
         }

@@ -213,7 +213,7 @@ pub async fn get_gpu_detailed() -> Result<Vec<GpuDetailed>, String> {
                 name,
             }
         }).collect();
-        gpus.sort_by(|a, b| (!b.name.to_lowercase().contains("intel")).cmp(&(!a.name.to_lowercase().contains("intel"))));
+        gpus.sort_by_key(|b| std::cmp::Reverse(!b.name.to_lowercase().contains("intel") ));
         Ok(gpus)
     }).await.map_err(|e| e.to_string())?
 }
@@ -501,7 +501,7 @@ pub async fn get_environment_variables() -> Result<Vec<EnvVar>, String> {
         let var_type = if sys_keys.contains(&name.as_str()) { "Système" } else { "Utilisateur" }.to_string();
         EnvVar { name, value, var_type }
     }).collect();
-    vars.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    vars.sort_by_key(|a| a.name.to_lowercase());
     Ok(vars)
 }
 

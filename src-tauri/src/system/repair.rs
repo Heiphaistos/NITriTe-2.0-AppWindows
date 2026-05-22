@@ -226,9 +226,7 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
 
         // MAJ & Sécurité supplémentaires
         "defender_full_scan" => Some(("Scan complet Defender",    "powershell -Command Start-MpScan -ScanType FullScan".to_string())),
-        "enable_firewall"    => Some(("Activer Pare-feu", concat!(
-            "netsh advfirewall set allprofiles state on"
-        ).to_string())),
+        "enable_firewall"    => Some(("Activer Pare-feu", "netsh advfirewall set allprofiles state on".to_string())),
         "wu_usoclient"       => Some(("Forcer scan WU",            "UsoClient.exe StartScan".to_string())),
 
         // Cache & Nettoyage supplémentaires
@@ -252,9 +250,7 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
         ).to_string())),
 
         // Services & Processus
-        "restart_explorer" => Some(("Redémarrer Explorer", concat!(
-            "taskkill /F /IM explorer.exe & start explorer.exe"
-        ).to_string())),
+        "restart_explorer" => Some(("Redémarrer Explorer", "taskkill /F /IM explorer.exe & start explorer.exe".to_string())),
         "restart_audio"    => Some(("Redémarrer service Audio", concat!(
             "net stop AudioSrv & net stop AudioEndpointBuilder & ",
             "net start AudioEndpointBuilder & net start AudioSrv"

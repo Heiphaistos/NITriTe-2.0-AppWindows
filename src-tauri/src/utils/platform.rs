@@ -44,7 +44,7 @@ fn extract_build_number(version: &str) -> u32 {
     // Cherche le dernier nombre dans la version (ex: "10.0.26100" -> 26100)
     version
         .split('.')
-        .last()
+        .next_back()
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(0)
 }

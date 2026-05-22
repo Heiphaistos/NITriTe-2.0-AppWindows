@@ -118,7 +118,7 @@ pub fn set_boot_timeout(seconds: u32) -> Result<String, String> {
 
 #[tauri::command]
 pub fn set_default_boot(entry_id: String) -> Result<String, String> {
-    let id = entry_id.replace('"', "").replace('\'', "");
+    let id = entry_id.replace(['"', '\''], "");
     let out = ps_out(&format!("bcdedit /default {{{}}}", id.trim_matches(|c| c == '{' || c == '}')));
     if out.to_lowercase().contains("successfully") {
         Ok(format!("Entrée de démarrage par défaut définie : {}", id))

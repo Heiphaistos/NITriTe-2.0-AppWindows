@@ -264,7 +264,7 @@ pub fn surface_test_volume(
                 }
             };
 
-            if i as usize % sample_every == 0 {
+            if (i as usize).is_multiple_of(sample_every) {
                 let ms = t0.elapsed().as_millis().max(1);
                 let speed_mbs = (CHUNK as f64 / 1_048_576.0) / (ms as f64 / 1000.0);
                 blocks.push(SurfaceBlock {
@@ -435,8 +435,8 @@ else {{ $result | ConvertTo-Json -Compress -Depth 2 }}
             let j = if t.starts_with('{') { format!("[{}]", t) } else { t.to_string() };
             serde_json::from_str::<Vec<serde_json::Value>>(&j).ok()
         })
-        .map(|vals| vals.into_iter().filter_map(|v| {
-            Some(DeepMftFile {
+        .map(|vals| vals.into_iter().map(|v| {
+            DeepMftFile {
                 name:       v["name"].as_str().unwrap_or("").to_string(),
                 path:       v["path"].as_str().unwrap_or("").to_string(),
                 size_bytes: v["size_bytes"].as_u64().unwrap_or(0),
@@ -444,7 +444,7 @@ else {{ $result | ConvertTo-Json -Compress -Depth 2 }}
                 extension:  v["extension"].as_str().unwrap_or("").to_string(),
                 is_deleted: v["is_deleted"].as_bool().unwrap_or(false),
                 source:     v["source"].as_str().unwrap_or("").to_string(),
-            })
+            }
         }).collect())
         .unwrap_or_default()
 }

@@ -58,7 +58,7 @@ try {
         if text.is_empty() || text == "[]" { return Ok(vec![]); }
         let json_text = if text.starts_with('{') { format!("[{}]", text) } else { text.to_string() };
         let items: Vec<serde_json::Value> = serde_json::from_str(&json_text).unwrap_or_default();
-        return Ok(items.into_iter().filter_map(|v| {
+        Ok(items.into_iter().filter_map(|v| {
             let total = v["total"].as_f64().unwrap_or(0.0);
             let free = v["free"].as_f64().unwrap_or(0.0);
             let used = (total - free).max(0.0);
@@ -77,7 +77,7 @@ try {
                 operational_status: v["opstat"].as_str().unwrap_or("").trim().to_string(),
                 serial_number: String::new(),
             })
-        }).collect());
+        }).collect())
     }
     #[cfg(not(target_os = "windows"))]
     Ok(vec![])

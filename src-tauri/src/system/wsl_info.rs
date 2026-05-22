@@ -118,7 +118,7 @@ try {
 
 #[tauri::command]
 pub fn wsl_run_command(distro: String, command: String) -> Result<String, String> {
-    let dist = distro.replace('"', "").replace('\'', "");
+    let dist = distro.replace(['"', '\''], "");
     let cmd = command.replace('"', "'");
     #[cfg(target_os = "windows")]
     {
@@ -139,7 +139,7 @@ pub fn wsl_run_command(distro: String, command: String) -> Result<String, String
         if o.status.success() {
             return Ok(stdout);
         }
-        return Err(if stderr.is_empty() { stdout } else { stderr });
+        Err(if stderr.is_empty() { stdout } else { stderr })
     }
     #[cfg(not(target_os = "windows"))]
     Err("Non disponible".to_string())
@@ -159,7 +159,7 @@ pub fn wsl_set_default_version(version: u32) -> Result<String, String> {
         if o.status.success() {
             return Ok(format!("Version WSL par défaut : {}", v));
         }
-        return Err(out);
+        Err(out)
     }
     #[cfg(not(target_os = "windows"))]
     Err("Non disponible".to_string())

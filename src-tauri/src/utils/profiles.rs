@@ -47,7 +47,7 @@ pub fn save_profile(profile: &Profile) -> Result<(), std::io::Error> {
     let filename = sanitize_filename(&profile.name);
     let path = dir.join(format!("{}.json", filename));
     let json = serde_json::to_string_pretty(profile)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
     std::fs::write(path, json)
 }
 

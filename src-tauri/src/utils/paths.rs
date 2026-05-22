@@ -32,7 +32,7 @@ pub fn logs_dir() -> PathBuf {
 pub fn backups_dir() -> PathBuf {
     let dir = dirs::document_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Documents")))
-        .unwrap_or_else(|| app_root_dir())
+        .unwrap_or_else(app_root_dir)
         .join("NiTriTe")
         .join("backups");
     let _ = std::fs::create_dir_all(&dir);

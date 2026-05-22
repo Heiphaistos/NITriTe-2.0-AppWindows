@@ -375,7 +375,7 @@ async fn download_with_progress(
     while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
         file.write_all(&chunk).await.map_err(|e| e.to_string())?;
         downloaded += chunk.len() as u64;
-        let percent = if total_size > 0 { ((downloaded * 100) / total_size).min(99) as u8 } else { 0 };
+        let percent = (downloaded * 100).checked_div(total_size).unwrap_or(0).min(99) as u8;
         emit_fn(DownloadProgress {
             name: name.into(),
             downloaded_mb: downloaded as f64 / 1_048_576.0,
@@ -400,7 +400,7 @@ fn extract_all_zip(zip_path: &str, dest_dir: &str) -> Result<(), String> {
         if entry.is_dir() { continue; }
         // Extraire seulement les fichiers utiles (exe, dll, so)
         let name = entry.name().to_string();
-        let basename = name.split('/').last().unwrap_or(&name);
+        let basename = name.split('/').next_back().unwrap_or(&name);
         let ext = basename.rsplit('.').next().unwrap_or("").to_lowercase();
         if !["exe", "dll", "so", "dylib"].contains(&ext.as_str()) { continue; }
         let dest = format!("{}\\{}", dest_dir, basename);

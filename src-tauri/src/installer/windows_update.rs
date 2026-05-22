@@ -123,10 +123,8 @@ try {
             .map_err(|e| NiTriTeError::System(e.to_string()))?;
 
         if let Some(stdout) = child.stdout.take() {
-            for line in BufReader::new(stdout).lines() {
-                if let Ok(l) = line {
-                    let _ = win.emit("wu-log", l);
-                }
+            for l in BufReader::new(stdout).lines().map_while(Result::ok) {
+                let _ = win.emit("wu-log", l);
             }
         }
 

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
-
 use super::{parse_json_arr, ps};
 
 // ─── Hash Fichier ─────────────────────────────────────────────────────────────

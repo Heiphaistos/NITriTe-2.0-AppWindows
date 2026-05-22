@@ -148,7 +148,7 @@ fn query_nvidia_smi() -> Vec<SensorReading> {
     ];
     for path in &paths {
         let mut cmd = Command::new(path);
-        cmd.args(&[
+        cmd.args([
             "--query-gpu=name,temperature.gpu,fan.speed,power.draw,clocks.gr,clocks.mem,memory.used,memory.total,utilization.gpu",
             "--format=csv,noheader,nounits",
         ]);

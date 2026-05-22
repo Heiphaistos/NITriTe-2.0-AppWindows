@@ -74,7 +74,7 @@ pub struct NetShareEntry { pub name: String, pub path: String, pub comment: Stri
 // ─── Ping ──────────────────────────────────────────────────────────────────────
 #[tauri::command]
 pub fn run_ping(host: String, count: u32) -> PingDiagResult {
-    let count = count.min(10).max(1);
+    let count = count.clamp(1, 10);
     let h = match validate_host(&host) {
         Ok(h) => h,
         Err(e) => { tracing::warn!("run_ping: {}", e); return PingDiagResult::default(); }
@@ -251,7 +251,7 @@ pub fn get_route_table() -> Vec<RouteEntry> {
 // ─── Scan de ports ─────────────────────────────────────────────────────────────
 #[tauri::command]
 pub fn scan_ports(host: String, ports: Vec<u16>) -> Vec<PortScanResult> {
-    let h = host.replace('\'', "").replace('"', "");
+    let h = host.replace(['\'', '"'], "");
     let ports_limited: Vec<u16> = ports.into_iter().take(100).collect();
     let ports_str: Vec<String> = ports_limited.iter().map(|p| p.to_string()).collect();
     let ports_joined = ports_str.join(",");
@@ -316,24 +316,24 @@ pub fn get_wifi_networks() -> Vec<WifiNetwork> {
                 if line.starts_with("SSID") && !line.starts_with("BSSID") {
                     if !current.ssid.is_empty() { networks.push(current.clone()); }
                     current = WifiNetwork::default();
-                    current.ssid = line.splitn(2,':').nth(1).unwrap_or("").trim().to_string();
+                    current.ssid = line.split_once(':').map(|x| x.1).unwrap_or("").trim().to_string();
                 } else if line.starts_with("BSSID") {
-                    current.bssid = line.splitn(2,':').nth(1).unwrap_or("").trim().to_string();
+                    current.bssid = line.split_once(':').map(|x| x.1).unwrap_or("").trim().to_string();
                 } else if line.to_lowercase().starts_with("signal") {
-                    let v = line.splitn(2,':').nth(1).unwrap_or("0%").trim().trim_end_matches('%').parse::<u32>().unwrap_or(0);
+                    let v = line.split_once(':').map(|x| x.1).unwrap_or("0%").trim().trim_end_matches('%').parse::<u32>().unwrap_or(0);
                     current.signal_percent = v;
                 } else if line.to_lowercase().starts_with("channel") {
-                    current.channel = line.splitn(2,':').nth(1).unwrap_or("").trim().to_string();
+                    current.channel = line.split_once(':').map(|x| x.1).unwrap_or("").trim().to_string();
                 } else if line.to_lowercase().contains("authentication") {
-                    current.auth = line.splitn(2,':').nth(1).unwrap_or("").trim().to_string();
+                    current.auth = line.split_once(':').map(|x| x.1).unwrap_or("").trim().to_string();
                 } else if line.to_lowercase().contains("cipher") {
-                    current.encryption = line.splitn(2,':').nth(1).unwrap_or("").trim().to_string();
+                    current.encryption = line.split_once(':').map(|x| x.1).unwrap_or("").trim().to_string();
                 } else if line.to_lowercase().contains("radio type") {
-                    current.band = line.splitn(2,':').nth(1).unwrap_or("").trim().to_string();
+                    current.band = line.split_once(':').map(|x| x.1).unwrap_or("").trim().to_string();
                 }
             }
             if !current.ssid.is_empty() { networks.push(current); }
-            networks.sort_by(|a,b| b.signal_percent.cmp(&a.signal_percent));
+            networks.sort_by_key(|a| std::cmp::Reverse(a.signal_percent));
             return networks;
         }
     }
@@ -375,7 +375,7 @@ $procs = @{}; Get-Process | ForEach-Object { $procs[[string]$_.Id] = $_.ProcessN
 // ─── Vérification HTTP/HTTPS ───────────────────────────────────────────────────
 #[tauri::command]
 pub fn check_http(url: String) -> HttpCheckResult {
-    let url_clean = url.replace('\'', "").replace('"', "");
+    let url_clean = url.replace(['\'', '"'], "");
     let ps = format!(r#"
 try {{
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -416,7 +416,7 @@ try {{
 // ─── Partages réseau ───────────────────────────────────────────────────────────
 #[tauri::command]
 pub fn get_net_shares(host: String) -> Vec<NetShareEntry> {
-    let h = host.replace('\'', "").replace('"', "");
+    let h = host.replace(['\'', '"'], "");
     let ps = format!(r#"
 try {{
     $shares = @(Get-WmiObject -ComputerName '{host}' Win32_Share -EA SilentlyContinue |

@@ -592,12 +592,28 @@ pub fn list_script_files(dir: &str) -> Result<Vec<ScriptFileInfo>, NiTriTeError>
     Ok(files)
 }
 
+fn is_script_path_allowed(p: &std::path::Path) -> bool {
+    let allowed: Vec<std::path::PathBuf> = [
+        dirs::document_dir(),
+        dirs::desktop_dir(),
+        dirs::download_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    allowed.iter().any(|root| p.starts_with(root))
+}
+
 pub fn read_script_file(path: &str) -> Result<String, NiTriTeError> {
     let p = std::path::Path::new(path);
+    if !is_script_path_allowed(p) {
+        return Err(NiTriTeError::CommandDenied(
+            format!("Lecture interdite hors des répertoires autorisés: {}", path),
+        ));
+    }
     if !p.exists() {
         return Err(NiTriTeError::System(format!("Fichier introuvable: {}", path)));
     }
-    // Limiter a 100KB
     let meta = std::fs::metadata(p)?;
     if meta.len() > 100_000 {
         return Err(NiTriTeError::System("Fichier trop volumineux (max 100KB)".into()));
@@ -606,11 +622,15 @@ pub fn read_script_file(path: &str) -> Result<String, NiTriTeError> {
 }
 
 pub fn save_script_file(path: &str, content: &str) -> Result<(), NiTriTeError> {
-    // Valider l'extension
     let p = std::path::Path::new(path);
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
     if !["ps1", "bat", "cmd", "sh", "py"].contains(&ext) {
         return Err(NiTriTeError::System(format!("Extension non autorisee: .{}", ext)));
+    }
+    if !is_script_path_allowed(p) {
+        return Err(NiTriTeError::CommandDenied(
+            format!("Écriture interdite hors des répertoires autorisés: {}", path),
+        ));
     }
     std::fs::write(p, content)?;
     Ok(())

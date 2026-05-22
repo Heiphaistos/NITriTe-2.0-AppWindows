@@ -141,7 +141,7 @@ pub async fn get_recent_logs(count: Option<usize>) -> Result<Vec<LogEntry>, Stri
     let file = fs::File::open(&path).map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
     let mut entries: Vec<LogEntry> = Vec::new();
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
             entries.push(entry);
         }
@@ -180,7 +180,7 @@ pub async fn get_log_stats() -> Result<LogStats, String> {
     let file = fs::File::open(&path).map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
     let mut stats = LogStats { total: 0, debug: 0, info: 0, warn: 0, error: 0, critical: 0, file_size_kb };
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
             stats.total += 1;
             match entry.level.as_str() {

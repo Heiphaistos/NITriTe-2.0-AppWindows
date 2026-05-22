@@ -1,7 +1,6 @@
 use serde::Serialize;
 use tauri::Emitter;
 #[cfg(target_os = "windows")]
-
 use crate::error::NiTriTeError;
 use super::extended_info::{get_bios_info, get_battery_extended};
 use super::scan_supplement::{BitlockerVolume, StorageItem, collect_scan_supplement};
@@ -193,13 +192,10 @@ pub async fn run_total_scan(window: tauri::Window) -> Result<ScanResult, NiTriTe
         Ok(Err(e)) => result.scan_errors.push(format!("BIOS: {}", e)),
         Err(_) => {}
     }
-    match tokio::task::spawn_blocking(get_battery_extended).await {
-        Ok(Ok(Some(bat))) => {
-            result.battery_present = true;
-            result.battery_health = bat.health_percent;
-            result.battery_cycles = bat.estimated_runtime_minutes;
-        }
-        _ => {}
+    if let Ok(Ok(Some(bat))) = tokio::task::spawn_blocking(get_battery_extended).await {
+        result.battery_present = true;
+        result.battery_health = bat.health_percent;
+        result.battery_cycles = bat.estimated_runtime_minutes;
     }
 
     // 2. Infos système (CPU, RAM, OS, uptime) (10→20%)

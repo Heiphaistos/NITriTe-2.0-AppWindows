@@ -33,9 +33,9 @@ async fn get_system_info(state: tauri::State<'_, AppState>) -> Result<serde_json
 
 #[tauri::command]
 async fn get_platform_info() -> Result<PlatformInfo, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(PlatformInfo::detect)
+    tokio::task::spawn_blocking(PlatformInfo::detect)
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 // === Monitoring ===
@@ -137,9 +137,9 @@ async fn upgrade_all(window: tauri::Window) -> Result<(), NiTriTeError> {
 
 #[tauri::command]
 async fn detect_shells() -> Result<Vec<maintenance::terminal::ShellInfo>, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(maintenance::terminal::detect_shells)
+    tokio::task::spawn_blocking(maintenance::terminal::detect_shells)
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 #[tauri::command]
@@ -153,9 +153,9 @@ async fn run_in_shell(shell_id: String, command: String) -> Result<maintenance::
 
 #[tauri::command]
 async fn get_browser_cache_sizes() -> Result<Vec<maintenance::browser_cleanup::BrowserCacheInfo>, NiTriTeError> {
-    Ok(tokio::task::spawn_blocking(maintenance::browser_cleanup::get_browser_cache_sizes)
+    tokio::task::spawn_blocking(maintenance::browser_cleanup::get_browser_cache_sizes)
         .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?)
+        .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
 #[tauri::command]

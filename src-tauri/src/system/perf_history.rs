@@ -38,8 +38,8 @@ pub struct TopProcess {
 /// Historique de performances — non-bloquant via spawn_blocking
 #[tauri::command]
 pub async fn get_perf_history(samples: u32, interval_secs: u32) -> PerfHistory {
-    let n = samples.min(120).max(5);
-    let interval = interval_secs.min(60).max(1);
+    let n = samples.clamp(5, 120);
+    let interval = interval_secs.clamp(1, 60);
 
     let ps = format!(
         r#"
@@ -146,7 +146,7 @@ $peakRam = if($points.Count) {{ [long]($points | Measure-Object -Property ramUse
 /// Top processus par CPU — non-bloquant
 #[tauri::command]
 pub async fn get_top_processes_by_cpu(limit: u32) -> Vec<TopProcess> {
-    let n = limit.min(50).max(5);
+    let n = limit.clamp(5, 50);
     let ps = format!(
         r#"
 @(Get-Process -EA SilentlyContinue |

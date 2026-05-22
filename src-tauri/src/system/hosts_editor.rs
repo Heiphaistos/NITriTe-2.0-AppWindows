@@ -46,7 +46,7 @@ pub fn get_hosts_entries() -> Vec<HostsEntry> {
         };
 
         let parts: Vec<&str> = parse_line.splitn(2, |c: char| c.is_whitespace()).collect();
-        if parts.len() >= 1 {
+        if !parts.is_empty() {
             let ip = parts[0].trim();
             let rest = parts.get(1).unwrap_or(&"").trim();
 
@@ -109,7 +109,7 @@ pub fn add_hosts_entry(ip: String, hostname: String, comment: String) -> Result<
         if o.status.success() {
             return Ok(format!("Entrée ajoutée : {} -> {}", ip_c, host_c));
         }
-        return Err(String::from_utf8_lossy(&o.stderr).to_string());
+        Err(String::from_utf8_lossy(&o.stderr).to_string())
     }
     #[cfg(not(target_os = "windows"))]
     Err("Non disponible".to_string())
@@ -126,7 +126,7 @@ $new | Set-Content '{}' -Encoding UTF8
     {
         let o = Command::new("powershell").args(["-NoProfile","-NonInteractive","-Command",&ps]).creation_flags(0x08000000).output().map_err(|e| e.to_string())?;
         if o.status.success() { return Ok("Entrée supprimée".to_string()); }
-        return Err(String::from_utf8_lossy(&o.stderr).to_string());
+        Err(String::from_utf8_lossy(&o.stderr).to_string())
     }
     #[cfg(not(target_os = "windows"))]
     Err("Non disponible".to_string())
@@ -152,7 +152,7 @@ if ($idx -ge 0 -and $idx -lt $lines.Count) {{
     {
         let o = Command::new("powershell").args(["-NoProfile","-NonInteractive","-Command",&ps]).creation_flags(0x08000000).output().map_err(|e| e.to_string())?;
         if o.status.success() { return Ok("Modifié".to_string()); }
-        return Err(String::from_utf8_lossy(&o.stderr).to_string());
+        Err(String::from_utf8_lossy(&o.stderr).to_string())
     }
     #[cfg(not(target_os = "windows"))]
     Err("Non disponible".to_string())

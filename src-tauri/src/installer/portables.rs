@@ -87,7 +87,7 @@ fn find_main_exe(dir: &std::path::Path, folder_name: &str) -> Option<String> {
             let p = e.path();
             p.is_file()
                 && p.extension()
-                    .map(|x| x.to_ascii_lowercase() == "exe")
+                    .map(|x| x.eq_ignore_ascii_case("exe"))
                     .unwrap_or(false)
         })
         .map(|e| e.file_name().to_string_lossy().to_string())

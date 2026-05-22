@@ -90,7 +90,7 @@ pub fn run_in_shell(shell_id: &str, command: &str, timeout_secs: u64) -> Result<
     });
 
     let output = match rx.recv_timeout(effective_timeout) {
-        Ok(result) => result.map_err(|e| NiTriTeError::Io(e))?,
+        Ok(result) => result.map_err(NiTriTeError::Io)?,
         Err(_) => {
             // Timeout — tuer le processus par PID
             #[cfg(target_os = "windows")]

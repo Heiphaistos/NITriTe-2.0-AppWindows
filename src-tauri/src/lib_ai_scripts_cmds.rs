@@ -226,7 +226,7 @@ async fn get_app_logs() -> Result<Vec<AppLogEntry>, NiTriTeError> {
 
         // Lire tous les fichiers .log dans le dossier
         let mut log_files: Vec<_> = std::fs::read_dir(&logs_dir)
-            .map_err(|e| NiTriTeError::Io(e))?
+            .map_err(NiTriTeError::Io)?
             .filter_map(|e| e.ok())
             .filter(|e| {
                 e.path()
@@ -270,14 +270,14 @@ async fn get_app_logs() -> Result<Vec<AppLogEntry>, NiTriTeError> {
                 let rest = parts[1].trim();
 
                 // Trouver le level (INFO, WARN, ERROR, DEBUG, TRACE)
-                let (level, msg) = if rest.starts_with("INFO") {
-                    ("INFO", rest[4..].trim().trim_start_matches(|c: char| !c.is_alphabetic()))
-                } else if rest.starts_with("WARN") {
-                    ("WARN", rest[4..].trim().trim_start_matches(|c: char| !c.is_alphabetic()))
-                } else if rest.starts_with("ERROR") {
-                    ("ERROR", rest[5..].trim().trim_start_matches(|c: char| !c.is_alphabetic()))
-                } else if rest.starts_with("DEBUG") {
-                    ("INFO", rest[5..].trim().trim_start_matches(|c: char| !c.is_alphabetic()))
+                let (level, msg) = if let Some(s) = rest.strip_prefix("INFO") {
+                    ("INFO", s.trim().trim_start_matches(|c: char| !c.is_alphabetic()))
+                } else if let Some(s) = rest.strip_prefix("WARN") {
+                    ("WARN", s.trim().trim_start_matches(|c: char| !c.is_alphabetic()))
+                } else if let Some(s) = rest.strip_prefix("ERROR") {
+                    ("ERROR", s.trim().trim_start_matches(|c: char| !c.is_alphabetic()))
+                } else if let Some(s) = rest.strip_prefix("DEBUG") {
+                    ("INFO", s.trim().trim_start_matches(|c: char| !c.is_alphabetic()))
                 } else {
                     ("INFO", rest)
                 };

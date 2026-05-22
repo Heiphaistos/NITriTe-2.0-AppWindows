@@ -1,6 +1,5 @@
 use serde::Serialize;
 #[cfg(target_os = "windows")]
-
 use super::{parse_json_arr, ps};
 
 // ─── Disk Space Visualizer ────────────────────────────────────────────────────
@@ -49,7 +48,7 @@ fn disk_build_node(p: &std::path::Path, depth: u32, max: u32) -> DiskNode {
     let mut children: Vec<DiskNode> = std::fs::read_dir(p).ok().map(|rd| {
         rd.filter_map(|e| e.ok()).map(|e| disk_build_node(&e.path(), depth + 1, max)).collect()
     }).unwrap_or_default();
-    children.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    children.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
     children.truncate(20);
     let size: u64 = children.iter().map(|c| c.size_bytes).sum();
     DiskNode { name, path: p.to_string_lossy().to_string(), size_bytes: size, is_dir: true, children }
@@ -153,7 +152,7 @@ $dupes | ConvertTo-Json -Compress
         let files: Vec<String> = v["files"].as_str().unwrap_or("").split('|').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
         DuplicateGroup { hash: v["hash"].as_str().unwrap_or("").to_string(), size_bytes: size, count, wasted_bytes: size * (count as u64 - 1), files }
     }).collect();
-    groups.sort_by(|a, b| b.wasted_bytes.cmp(&a.wasted_bytes));
+    groups.sort_by_key(|a| std::cmp::Reverse(a.wasted_bytes));
     Ok(groups)
 }
 

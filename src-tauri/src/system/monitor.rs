@@ -104,8 +104,8 @@ pub fn start_monitoring(
         let mut sys = System::new_all();
         let mut networks = Networks::new_with_refreshed_list();
         let mut disks = Disks::new_with_refreshed_list();
-        let mut prev_rx: u64 = networks.iter().map(|(_, n)| n.total_received()).sum();
-        let mut prev_tx: u64 = networks.iter().map(|(_, n)| n.total_transmitted()).sum();
+        let mut prev_rx: u64 = networks.values().map(|n| n.total_received()).sum();
+        let mut prev_tx: u64 = networks.values().map(|n| n.total_transmitted()).sum();
         let mut prev_disk_read: u64 = 0u64;
         let mut prev_disk_write: u64 = 0u64;
         // Compteur de ticks : refresh processus tous les 5 ticks seulement
@@ -156,8 +156,8 @@ pub fn start_monitoring(
             };
 
             // Réseau
-            let cur_rx: u64 = networks.iter().map(|(_, n)| n.total_received()).sum();
-            let cur_tx: u64 = networks.iter().map(|(_, n)| n.total_transmitted()).sum();
+            let cur_rx: u64 = networks.values().map(|n| n.total_received()).sum();
+            let cur_tx: u64 = networks.values().map(|n| n.total_transmitted()).sum();
             let down_kbs = (cur_rx.saturating_sub(prev_rx)) as f64 / 1024.0 / interval_s;
             let up_kbs = (cur_tx.saturating_sub(prev_tx)) as f64 / 1024.0 / interval_s;
             prev_rx = cur_rx;
@@ -245,7 +245,7 @@ fn collect_gpu_data() -> Result<Vec<GpuData>, String> {
                 .map(|line| {
                     let parts: Vec<&str> = line.splitn(5, ',').map(str::trim).collect();
                     GpuData {
-                        name: parts.get(0).unwrap_or(&"GPU").to_string(),
+                        name: parts.first().unwrap_or(&"GPU").to_string(),
                         usage_percent: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0.0),
                         vram_used_mb: parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0),
                         vram_total_mb: parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0),
@@ -288,13 +288,13 @@ try {
         if trimmed.is_empty() || trimmed == "[]" { return Ok(vec![]); }
         let arr: Vec<serde_json::Value> = serde_json::from_str(trimmed)
             .unwrap_or_else(|_| serde_json::from_str(&format!("[{}]", trimmed)).unwrap_or_default());
-        return Ok(arr.iter().map(|v| GpuData {
+        Ok(arr.iter().map(|v| GpuData {
             name: v["Name"].as_str().unwrap_or("GPU").to_string(),
             usage_percent: v["Usage"].as_f64().unwrap_or(0.0) as f32,
             vram_used_mb: v["VramUsed"].as_u64().unwrap_or(0),
             vram_total_mb: v["VramTotal"].as_u64().unwrap_or(0),
             temperature_c: v["Temp"].as_i64().unwrap_or(0) as i32,
-        }).collect());
+        }).collect())
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -333,7 +333,7 @@ $out | ConvertTo-Json -Compress -Depth 3
                 if temp > 0 { Some(DiskTemp { name, temp_c: temp }) } else { None }
             }).collect()
         }).unwrap_or_default();
-        return Ok((cpu_temp, disk_temps));
+        Ok((cpu_temp, disk_temps))
     }
     #[cfg(not(target_os = "windows"))]
     Ok((None, vec![]))
@@ -355,10 +355,10 @@ try {
             .output()
             .map_err(|e| e.to_string())?;
         let text = String::from_utf8_lossy(&out.stdout);
-        let parts: Vec<&str> = text.trim().split_whitespace().collect();
+        let parts: Vec<&str> = text.split_whitespace().collect();
         let r = parts.first().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
         let w = parts.get(1).and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-        return Ok((r, w));
+        Ok((r, w))
     }
     #[cfg(not(target_os = "windows"))]
     Ok((0, 0))

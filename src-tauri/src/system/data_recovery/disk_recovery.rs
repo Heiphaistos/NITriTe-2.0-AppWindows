@@ -210,8 +210,8 @@ try {{
             match run_ps(&ps) {
                 Some(t) => {
                     let t = t.trim();
-                    if t.starts_with("OK:") {
-                        let parts: Vec<&str> = t[3..].splitn(2, ':').collect();
+                    if let Some(rest) = t.strip_prefix("OK:") {
+                        let parts: Vec<&str> = rest.splitn(2, ':').collect();
                         let skipped: u64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
                         ok += 1;
                         if skipped > 0 {
