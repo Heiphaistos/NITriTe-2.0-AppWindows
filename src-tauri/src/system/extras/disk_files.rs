@@ -160,6 +160,17 @@ $dupes | ConvertTo-Json -Compress
 
 #[tauri::command]
 pub fn delete_file(path: String) -> Result<(), String> {
+    let path_lower = path.to_lowercase().replace('/', "\\");
+    let blocked = [
+        "c:\\windows\\",
+        "c:\\program files\\",
+        "c:\\program files (x86)\\",
+        "c:\\programdata\\",
+        "c:\\system volume information\\",
+    ];
+    if blocked.iter().any(|prefix| path_lower.starts_with(prefix)) {
+        return Err(format!("Suppression interdite dans les répertoires système: {}", path));
+    }
     std::fs::remove_file(&path).map_err(|e| format!("{}: {}", path, e))
 }
 

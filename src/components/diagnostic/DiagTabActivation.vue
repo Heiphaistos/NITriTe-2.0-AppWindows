@@ -246,11 +246,11 @@ function actStatus(s: string): "success" | "danger" | "warning" | "default" {
           <ExternalLink :size="12" /> Paramètres d'activation Windows
         </NButton>
         <NButton variant="ghost" size="sm"
-          @click="invoke('run_system_command', { cmd: 'cmd', args: ['/c', 'start', 'cmd', '/k', 'slmgr /xpr'] }).catch(() => {})">
+          @click="invoke('execute_tool', { command: 'slmgr /xpr', isUrl: false }).catch(() => {})">
           <Key :size="12" /> Vérifier expiration licence (slmgr /xpr)
         </NButton>
         <NButton variant="ghost" size="sm"
-          @click="invoke('run_system_command', { cmd: 'cmd', args: ['/c', 'start', 'cmd', '/k', 'slmgr /dlv'] }).catch(() => {})">
+          @click="invoke('execute_tool', { command: 'slmgr /dlv', isUrl: false }).catch(() => {})">
           <Key :size="12" /> Infos détaillées licence (slmgr /dlv)
         </NButton>
       </div>

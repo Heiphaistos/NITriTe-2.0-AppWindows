@@ -440,6 +440,15 @@ async fn open_portables_dir() -> Result<(), NiTriTeError> {
 async fn launch_exe(relative_path: String) -> Result<(), NiTriTeError> {
     let base = utils::paths::portables_dir();
     let full = base.join(std::path::Path::new(&relative_path));
+    let canonical_base = base.canonicalize()
+        .unwrap_or(base.clone());
+    let canonical_full = full.canonicalize()
+        .unwrap_or_else(|_| full.clone());
+    if !canonical_full.starts_with(&canonical_base) {
+        return Err(NiTriTeError::CommandDenied(
+            "Chemin hors du répertoire portables autorisé".into(),
+        ));
+    }
     if !full.exists() {
         return Err(NiTriTeError::System(format!("Fichier non trouvé: {}", full.display())));
     }
