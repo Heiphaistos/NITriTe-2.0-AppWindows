@@ -2,7 +2,9 @@
 
 ## Démonstration
 
-https://github.com/heiphaistos44-crypto/NITriTe-2.0/raw/main/assets/demo.mp4
+![Apercu](assets/demo.gif)
+
+[▶ Voir la démonstration complète](https://github.com/heiphaistos44-crypto/NITriTe-2.0/raw/main/assets/demo.mp4)
 
 
 > **Outil de diagnostic, maintenance et réparation Windows tout-en-un**
