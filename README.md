@@ -2,16 +2,7 @@
 
 ## Démonstration
 
-![Apercu](assets/demo.gif)
-
-[▶ Voir la démonstration complète](https://github.com/heiphaistos44-crypto/NITriTe-2.0/raw/main/assets/demo.mp4)
-
-
-> **Outil de diagnostic, maintenance et réparation Windows tout-en-un**
-> Version `6.0.0` · Tauri v2 · Windows 10/11 · 64-bit
-
----
-
+<video src="https://media.heiphaistos.org/videos/nitrite.mp4" controls width="100%" preload="none"></video>
 ## Table des matières
 
 1. [Présentation](#présentation)
