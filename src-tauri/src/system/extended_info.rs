@@ -197,19 +197,35 @@ pub fn get_folder_sizes() -> Result<Vec<FolderSizeEntry>, NiTriTeError> {
     Ok(result)
 }
 
+/// Expansion des variables `%VAR%` en pur Rust (sans spawn de `cmd`).
+/// Une variable absente est laissée telle quelle, comme le fait `cmd echo`.
 fn expand_env_path(path: &str) -> String {
-    let output = Command::new("cmd")
-        .args(["/C", &format!("echo {}", path)])
-        .creation_flags(0x08000000)
-        .output();
-
-    match output {
-        Ok(o) => {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() { path.to_string() } else { s }
+    let mut out = String::with_capacity(path.len());
+    let mut rest = path;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        match after.find('%') {
+            Some(end) => {
+                let name = &after[..end];
+                match std::env::var(name) {
+                    Ok(val) => out.push_str(&val),
+                    Err(_) => {
+                        out.push('%');
+                        out.push_str(name);
+                        out.push('%');
+                    }
+                }
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push('%');
+                rest = after;
+            }
         }
-        Err(_) => path.to_string(),
     }
+    out.push_str(rest);
+    out
 }
 
 fn measure_folder(path: &str) -> (f64, u64) {
@@ -233,5 +249,26 @@ fn measure_folder(path: &str) -> (f64, u64) {
             (mb, count)
         }
         Err(_) => (0.0, 0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_env_path;
+
+    #[test]
+    fn expands_known_var() {
+        std::env::set_var("NITRITE_TEST_VAR", "C:\\Data");
+        assert_eq!(expand_env_path("%NITRITE_TEST_VAR%\\x"), "C:\\Data\\x");
+    }
+
+    #[test]
+    fn keeps_unknown_var_literal() {
+        assert_eq!(expand_env_path("%NOPE_UNSET_123%\\y"), "%NOPE_UNSET_123%\\y");
+    }
+
+    #[test]
+    fn lone_percent_is_preserved() {
+        assert_eq!(expand_env_path("50% done"), "50% done");
     }
 }

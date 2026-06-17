@@ -116,12 +116,28 @@ pub fn set_boot_timeout(seconds: u32) -> Result<String, String> {
     }
 }
 
+/// Valide un identifiant bcdedit : GUID (hex + tirets) ou mot-clé connu.
+/// Renvoie l'identifiant nettoyé (sans accolades) ou `None` si invalide.
+/// Ferme toute injection PowerShell avant interpolation dans la commande.
+fn validate_boot_id(entry_id: &str) -> Option<String> {
+    let id = entry_id.trim().trim_matches(|c| c == '{' || c == '}');
+    let is_guid = !id.is_empty()
+        && id.len() <= 64
+        && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    let is_keyword = matches!(
+        id.to_ascii_lowercase().as_str(),
+        "current" | "default" | "bootmgr" | "ramdiskoptions" | "memdiag"
+    );
+    (is_guid || is_keyword).then(|| id.to_string())
+}
+
 #[tauri::command]
 pub fn set_default_boot(entry_id: String) -> Result<String, String> {
-    let id = entry_id.replace(['"', '\''], "");
-    let out = ps_out(&format!("bcdedit /default {{{}}}", id.trim_matches(|c| c == '{' || c == '}')));
+    let id = validate_boot_id(&entry_id)
+        .ok_or_else(|| format!("Identifiant de démarrage invalide : {entry_id}"))?;
+    let out = ps_out(&format!("bcdedit /default {{{id}}}"));
     if out.to_lowercase().contains("successfully") {
-        Ok(format!("Entrée de démarrage par défaut définie : {}", id))
+        Ok(format!("Entrée de démarrage par défaut définie : {id}"))
     } else {
         Err(out)
     }
@@ -130,4 +146,24 @@ pub fn set_default_boot(entry_id: String) -> Result<String, String> {
 #[tauri::command]
 pub fn boot_to_recovery() -> String {
     ps_out("shutdown /r /o /f /t 0")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_boot_id;
+
+    #[test]
+    fn accepts_guid_and_keywords() {
+        assert!(validate_boot_id("{9dea862c-5cdd-4e70-acc1-f32b344d4795}").is_some());
+        assert_eq!(validate_boot_id("{current}").as_deref(), Some("current"));
+        assert!(validate_boot_id("default").is_some());
+    }
+
+    #[test]
+    fn rejects_injection_payloads() {
+        assert!(validate_boot_id("default} & calc & echo {").is_none());
+        assert!(validate_boot_id("current; shutdown /r").is_none());
+        assert!(validate_boot_id("").is_none());
+        assert!(validate_boot_id("$(rm -rf)").is_none());
+    }
 }
