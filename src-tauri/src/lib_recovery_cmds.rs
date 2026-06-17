@@ -411,12 +411,8 @@ fn is_path_allowed(path: &std::path::Path) -> bool {
 #[tauri::command]
 async fn save_content_to_path(path: String, content: String) -> Result<(), NiTriTeError> {
     let p = std::path::Path::new(&path);
-    if !is_path_allowed(p) {
-        return Err(NiTriTeError::CommandDenied(
-            format!("Écriture interdite hors des répertoires autorisés: {}", path),
-        ));
-    }
-    // Interdire les extensions exécutables
+
+    // Interdire les extensions exécutables AVANT canonicalisation (path peut ne pas exister)
     let blocked_exts = ["exe", "dll", "bat", "cmd", "ps1", "vbs", "hta", "scr", "msi", "inf"];
     if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
         if blocked_exts.contains(&ext.to_lowercase().as_str()) {
@@ -425,7 +421,28 @@ async fn save_content_to_path(path: String, content: String) -> Result<(), NiTri
             ));
         }
     }
-    tokio::fs::write(&path, content.as_bytes())
+
+    // Canonicaliser le répertoire parent pour neutraliser les path traversal (../../)
+    // Le fichier lui-même n'existe pas encore, donc on canonicalise le parent.
+    let parent = p.parent().ok_or_else(|| NiTriTeError::CommandDenied(
+        format!("Chemin invalide (pas de répertoire parent): {}", path),
+    ))?;
+    let canonical_parent = tokio::fs::canonicalize(parent)
+        .await
+        .map_err(|_| NiTriTeError::CommandDenied(
+            format!("Répertoire parent introuvable: {}", parent.display()),
+        ))?;
+    let canonical_file = canonical_parent.join(p.file_name().ok_or_else(|| NiTriTeError::CommandDenied(
+        format!("Nom de fichier invalide: {}", path),
+    ))?);
+
+    if !is_path_allowed(&canonical_file) {
+        return Err(NiTriTeError::CommandDenied(
+            format!("Écriture interdite hors des répertoires autorisés: {}", canonical_file.display()),
+        ));
+    }
+
+    tokio::fs::write(&canonical_file, content.as_bytes())
         .await
         .map_err(|e| NiTriTeError::System(e.to_string()))
 }
@@ -485,9 +502,14 @@ async fn open_path(path: String) -> Result<(), NiTriTeError> {
 
 // === Execute tool command (cmd or ms-settings) ===
 
-/// Vérifie que la commande ne contient pas de métacaractères CMD/PS dangereux
+/// Vérifie que la commande ne contient pas de métacaractères CMD/PS dangereux.
+/// Liste élargie: inclut les délimiteurs de commandes, injections PS, expansion variables.
 fn has_shell_metacharacters(cmd: &str) -> bool {
-    ["&", "|", ";", ">", "<", "`", "$(", "%CMD%", "^"].iter().any(|c| cmd.contains(c))
+    // Métacaractères CMD : & (concat), | (pipe), ; (séquence PS), > < (redirection),
+    // ` (backtick PS), $( (sous-expression PS), % (variables batch), ^ (escape CMD),
+    // ! (variable retardée CMD), ' (quote PS), \n \r (sauts de ligne = nouvelles commandes)
+    let dangerous: &[&str] = &["&", "|", ";", ">", "<", "`", "$(", "%", "^", "!", "'", "\n", "\r"];
+    dangerous.iter().any(|c| cmd.contains(c))
 }
 
 #[tauri::command]

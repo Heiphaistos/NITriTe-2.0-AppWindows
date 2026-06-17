@@ -98,13 +98,36 @@ pub fn disable_startup_program(name: &str, location: &str) -> Result<CleanupResu
         location
     };
 
-    let ps_cmd = format!(
-        "Remove-ItemProperty -Path 'Registry::{}' -Name '{}' -ErrorAction Stop",
-        reg_path, name
+    // Valider reg_path : uniquement HKCU Run/RunOnce autorisé
+    let allowed_reg_prefixes = [
+        "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+    ];
+    if !allowed_reg_prefixes.iter().any(|prefix| reg_path.starts_with(prefix)) {
+        return Err(NiTriTeError::CommandDenied(
+            format!("Chemin registre non autorisé pour désactivation démarrage: {}", reg_path),
+        ));
+    }
+
+    // Valider name : pas de métacaractères PS/shell
+    if name.contains('\'') || name.contains('"') || name.contains('`') || name.contains('$') || name.is_empty() {
+        return Err(NiTriTeError::CommandDenied(
+            "Nom de programme invalide pour désactivation démarrage".into(),
+        ));
+    }
+
+    // Passer reg_path et name comme arguments séparés (pas par concaténation)
+    let ps_script = format!(
+        r#"$regPath = '{}'
+$entryName = '{}'
+Remove-ItemProperty -Path $regPath -Name $entryName -ErrorAction Stop"#,
+        reg_path.replace('\'', "''"),
+        name.replace('\'', "''")
     );
 
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &ps_cmd])
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
         .creation_flags(0x08000000).output()?;
 
     if output.status.success() {

@@ -27,7 +27,8 @@ pub fn check_system_health() -> SystemHealthStatus {
     let ps = r#"
 $out = @{}
 try {
-    $dism = & dism /Online /Cleanup-Image /CheckHealth 2>&1 | Out-String
+    $dismExe = if (Test-Path 'C:\Windows\System32\Dism.exe') { 'C:\Windows\System32\Dism.exe' } else { 'dism.exe' }
+    $dism = & $dismExe /Online /Cleanup-Image /CheckHealth 2>&1 | Out-String
     if ($dism -match 'repairable') { $out.DismHealth = 'Repairable' }
     elseif ($dism -match 'No component store corruption') { $out.DismHealth = 'Healthy' }
     else { $out.DismHealth = ($dism.Trim())[0..99] -join '' }
@@ -118,10 +119,10 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
         "reset_tcp"       => Some(("netsh int tcp reset",            "netsh int tcp reset & netsh int udp reset".to_string())),
 
         // Système Windows
-        "sfc"             => Some(("SFC /scannow",                   "sfc /scannow".to_string())),
-        "dism_scan"       => Some(("DISM /ScanHealth",               "dism /Online /Cleanup-Image /ScanHealth".to_string())),
-        "dism_restore"    => Some(("DISM /RestoreHealth",            "dism /Online /Cleanup-Image /RestoreHealth".to_string())),
-        "dism_startcomp"  => Some(("DISM /StartComponentCleanup",   "dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase".to_string())),
+        "sfc"             => Some(("SFC /scannow",                   "C:\\Windows\\System32\\sfc.exe /scannow".to_string())),
+        "dism_scan"       => Some(("DISM /ScanHealth",               "C:\\Windows\\System32\\Dism.exe /Online /Cleanup-Image /ScanHealth".to_string())),
+        "dism_restore"    => Some(("DISM /RestoreHealth",            "C:\\Windows\\System32\\Dism.exe /Online /Cleanup-Image /RestoreHealth".to_string())),
+        "dism_startcomp"  => Some(("DISM /StartComponentCleanup",   "C:\\Windows\\System32\\Dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase".to_string())),
         "repair_wmi"      => Some(("Réparer WMI",                   "winmgmt /resetrepository".to_string())),
         "gpupdate"        => Some(("gpupdate /force",                "gpupdate /force".to_string())),
         "bcdedit_check"   => Some(("BCDEdit (lecture)",             "bcdedit /enum all".to_string())),
@@ -200,8 +201,8 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
         ).to_string())),
 
         // Intégrité système supplémentaires
-        "dism_cleanup"    => Some(("DISM Cleanup-Image",           "dism /Online /Cleanup-Image /StartComponentCleanup".to_string())),
-        "sfc_verify_only" => Some(("SFC /VERIFYONLY",              "sfc /VERIFYONLY".to_string())),
+        "dism_cleanup"    => Some(("DISM Cleanup-Image",           "C:\\Windows\\System32\\Dism.exe /Online /Cleanup-Image /StartComponentCleanup".to_string())),
+        "sfc_verify_only" => Some(("SFC /VERIFYONLY",              "C:\\Windows\\System32\\sfc.exe /VERIFYONLY".to_string())),
 
         // Démarrage & Boot
         "bootrec_fixmbr"    => Some(("Réparer MBR",               "bootrec /fixmbr".to_string())),
@@ -293,19 +294,76 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
     }
 }
 
+/// Détermine le timeout approprié selon le type de commande (en secondes)
+fn timeout_for_repair(repair_type: &str) -> u64 {
+    match repair_type {
+        "dism_restore"          => 1800, // DISM RestoreHealth : jusqu'à 30min
+        "dism_scan"             => 600,  // DISM ScanHealth : ~10min
+        "dism_startcomp"
+        | "dism_cleanup"        => 900,  // DISM Cleanup : ~15min
+        "sfc" | "sfc_verify_only" => 600, // SFC /scannow : ~10min
+        "chkdsk_c"
+        | "chkdsk_spotfix"      => 300,  // CHKDSK scan : ~5min
+        "defrag_c"              => 1800, // Défragmentation : jusqu'à 30min
+        _                       => 120,  // Toutes les autres commandes : 2min max
+    }
+}
+
 #[tauri::command]
 pub fn run_repair_command(repair_type: String) -> RepairResult {
     let Some((label, cmd)) = repair_cmd_and_label(&repair_type) else {
         return RepairResult { command: repair_type, ..Default::default() };
     };
 
+    // Normaliser : injecter -NoProfile -NonInteractive sur toutes les invocations PS inline
+    // (les commandes de la whitelist font `powershell -Command "..."` sans ces flags)
+    let cmd_normalized = cmd.replace(
+        "powershell -Command",
+        "powershell -NoProfile -NonInteractive -Command",
+    );
+
+    let timeout_secs = timeout_for_repair(&repair_type);
     let start = std::time::Instant::now();
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("cmd")
-            .args(["/C", &cmd])
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let child = Command::new("cmd")
+            .args(["/C", &cmd_normalized])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .creation_flags(0x08000000)
-            .output();
+            .spawn();
+
+        let child = match child {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("run_repair_command: spawn error ({}): {}", repair_type, e);
+                return RepairResult { command: label.to_string(), ..Default::default() };
+            }
+        };
+
+        let pid = child.id();
+        let (tx, rx) = mpsc::channel::<std::io::Result<std::process::Output>>();
+        std::thread::spawn(move || { let _ = tx.send(child.wait_with_output()); });
+
+        let output = match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
+            Ok(result) => result,
+            Err(_) => {
+                // Timeout : tuer le processus
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                    .creation_flags(0x08000000).spawn();
+                tracing::warn!("run_repair_command: timeout {}s (type={}, pid={})", timeout_secs, repair_type, pid);
+                return RepairResult {
+                    command: label.to_string(),
+                    success: false,
+                    output: format!("Timeout: commande interrompue après {}s", timeout_secs),
+                    duration_secs: start.elapsed().as_secs(),
+                };
+            }
+        };
 
         let duration = start.elapsed().as_secs();
         if let Ok(o) = output {

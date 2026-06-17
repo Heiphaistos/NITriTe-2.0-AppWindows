@@ -1,6 +1,8 @@
 use serde::Serialize;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use tauri::Emitter;
@@ -48,30 +50,60 @@ pub fn execute_script(
         content.chars().take(120).collect::<String>()
     );
 
+    // Timeout : 5 min pour les scripts builtin, peut être étendu si nécessaire
+    const SCRIPT_TIMEOUT_SECS: u64 = 300;
+
     let (cmd, args) = match script_type {
-        "powershell" => ("powershell", vec!["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-Command", content]),
+        "powershell" => ("powershell", vec![
+            "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
+            "-Command", content,
+        ]),
         _ => ("cmd", vec!["/C", content]),
     };
 
-    let mut child = Command::new(cmd)
+    let child = Command::new(cmd)
         .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .creation_flags(0x08000000)
         .spawn()?;
 
-    let mut output_text = String::new();
+    let pid = child.id();
+    let (tx, rx) = mpsc::channel::<(String, std::process::ExitStatus)>();
+    let window_clone = window.clone();
 
-    if let Some(stdout) = child.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            output_text.push_str(&line);
-            output_text.push('\n');
-            let _ = window.emit("script-output", &line);
+    // Thread dédié : lit stdout ligne par ligne et émet les événements
+    std::thread::spawn(move || {
+        let mut child = child;
+        let mut output_text = String::new();
+        if let Some(stdout) = child.stdout.take() {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                output_text.push_str(&line);
+                output_text.push('\n');
+                let _ = window_clone.emit("script-output", &line);
+            }
         }
-    }
+        if let Ok(status) = child.wait() {
+            let _ = tx.send((output_text, status));
+        }
+    });
 
-    let status = child.wait()?;
+    let (output_text, status) = match rx.recv_timeout(Duration::from_secs(SCRIPT_TIMEOUT_SECS)) {
+        Ok(result) => result,
+        Err(_) => {
+            // Timeout — tuer le processus
+            #[cfg(target_os = "windows")]
+            let _ = Command::new("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .creation_flags(0x08000000)
+                .spawn();
+            tracing::warn!("execute_script: timeout {}s dépassé (pid={})", SCRIPT_TIMEOUT_SECS, pid);
+            return Err(NiTriTeError::Timeout(
+                format!("Script interrompu après {}s", SCRIPT_TIMEOUT_SECS)
+            ));
+        }
+    };
 
     Ok(ScriptResult {
         success: status.success(),

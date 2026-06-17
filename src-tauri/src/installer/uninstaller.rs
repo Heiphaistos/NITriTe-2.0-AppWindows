@@ -130,7 +130,16 @@ fn emit(window: &tauri::Window, step: &str, app: &str, msg: &str) {
 //  5. Vérification registre pour confirmer (pas de faux positif)
 //
 fn run_uninstall_silent(app_name: &str, uninstall_string: &str, _window: &tauri::Window) -> bool {
-    let ps = format!(r#"
+    // Encoder les valeurs via JSON : double quotes autour, caractères spéciaux échappés.
+    // La chaîne JSON est directement interprétable par ConvertFrom-Json dans PS.
+    // Pas de format!() avec ces valeurs — on construit le script par concaténation contrôlée.
+    let app_json = serde_json::to_string(app_name).unwrap_or_else(|_| "\"\"".to_string());
+    let us_json  = serde_json::to_string(uninstall_string).unwrap_or_else(|_| "\"\"".to_string());
+
+    // Le script PowerShell utilise ConvertFrom-Json pour désérialiser les valeurs JSON.
+    // Ceci protège contre toute injection : guillemets, backticks, $(), etc. sont neutralisés.
+    let ps = format!(
+        r#"
 function Is-Installed($name) {{
     $paths = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -142,8 +151,9 @@ function Is-Installed($name) {{
     return ($null -ne $found)
 }}
 
-$appName = '{app}'
-$s = '{us}'.Trim()
+# Valeurs passées via JSON — protège contre l'injection PowerShell
+$appName = {app_json} | ConvertFrom-Json
+$s = ({us_json} | ConvertFrom-Json).Trim()
 
 $proc = $null
 try {{
@@ -194,8 +204,8 @@ if (Is-Installed $appName) {{
     Write-Output "OK:$code"
 }}
 "#,
-        app = app_name.replace('\'', "''"),
-        us  = uninstall_string.replace('\'', "''")
+        app_json = app_json,
+        us_json  = us_json
     );
 
     match run_ps(&ps) {
@@ -437,14 +447,47 @@ pub fn extract_residuals(paths: Vec<String>, target: String) -> ResidualCleanRes
     if paths.is_empty() {
         return ResidualCleanResult { success: true, deleted_count: 0, failed_count: 0, message: "Rien à extraire.".into() };
     }
-    if let Err(e) = std::fs::create_dir_all(&target) {
+
+    // Valider le répertoire cible : uniquement Documents, Bureau, Téléchargements, Temp
+    let target_path = std::path::PathBuf::from(&target);
+    let allowed_roots: Vec<std::path::PathBuf> = [
+        dirs::document_dir(),
+        dirs::desktop_dir(),
+        dirs::download_dir(),
+        Some(std::env::temp_dir()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    // Canonicaliser pour éviter le path traversal (../../)
+    let canonical_target = match target_path.canonicalize()
+        .or_else(|_| { std::fs::create_dir_all(&target_path)?; target_path.canonicalize() }) {
+        Ok(p) => p,
+        Err(e) => return ResidualCleanResult {
+            success: false, deleted_count: 0, failed_count: paths.len(),
+            message: format!("Destination inaccessible: {}", e),
+        },
+    };
+
+    if !allowed_roots.iter().any(|root| canonical_target.starts_with(root)) {
+        return ResidualCleanResult {
+            success: false, deleted_count: 0, failed_count: paths.len(),
+            message: format!("Destination hors des répertoires autorisés: {}", target),
+        };
+    }
+
+    if let Err(e) = std::fs::create_dir_all(&canonical_target) {
         return ResidualCleanResult { success: false, deleted_count: 0, failed_count: paths.len(), message: format!("Destination inaccessible: {}", e) };
     }
 
     let paths_json = serde_json::to_string(&paths).unwrap_or_default();
+    let target_str = canonical_target.to_string_lossy().to_string();
+    let paths_json_escaped = paths_json.replace('\'', "''");
+    let target_json = serde_json::to_string(&target_str).unwrap_or_else(|_| "\"\"".to_string());
     let ps = format!(r#"
 $items = '{}' | ConvertFrom-Json
-$target = '{}'
+$target = {} | ConvertFrom-Json
 $ok = 0; $fail = 0
 
 # Export des clés registre en .reg
@@ -474,7 +517,7 @@ foreach ($item in $fileItems) {{
 }}
 
 @{{ok=$ok;fail=$fail}} | ConvertTo-Json -Compress
-"#, paths_json.replace('\'', "''"), target.replace('\'', "''"));
+"#, paths_json_escaped, target_json);
 
     let copy_result = run_ps(&ps);
     let (copied, copy_fail) = copy_result

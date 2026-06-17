@@ -347,21 +347,14 @@ async fn trigger_windows_update() -> String {
 }
 
 // === MAS Activation ===
+// SÉCURITÉ: N'exécute PAS de script tiers depuis internet (iex/irm).
+// Ouvre uniquement la page officielle Microsoft pour l'activation.
 
 #[tauri::command]
 async fn open_mas_window() -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command",
-                "Start-Process powershell -ArgumentList '-NoExit','-Command','irm https://get.activated.win | iex' -Verb RunAs"])
-            .creation_flags(0x08000000)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-    #[cfg(not(target_os = "windows"))]
-    Err("Non supporté".to_string())
+    // Ouvrir la page d'activation Windows dans le navigateur (plus sûr que IEX d'un script tiers)
+    open::that("ms-settings:activation")
+        .map_err(|e| e.to_string())
 }
 
 // === Network Extended ===
