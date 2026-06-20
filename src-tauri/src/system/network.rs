@@ -195,6 +195,15 @@ pub fn get_connections() -> Result<Vec<ConnectionInfo>, NiTriTeError> {
 }
 
 pub fn ping_host(host: &str) -> Result<PingResult, NiTriTeError> {
+    // Validation de l'hôte : lettres, chiffres, tirets, points, deux-points, crochets uniquement
+    let host = host.trim();
+    if host.is_empty() || host.len() > 255 {
+        return Err(NiTriTeError::System("Hôte invalide (vide ou trop long)".into()));
+    }
+    let valid = host.chars().all(|c| c.is_alphanumeric() || matches!(c, '.' | '-' | ':' | '[' | ']' | '_'));
+    if !valid {
+        return Err(NiTriTeError::System(format!("Caractères invalides dans l'hôte: {}", host)));
+    }
     let output = Command::new("ping")
         .args(["-n", "4", host])
         .creation_flags(0x08000000).output()?;

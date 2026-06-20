@@ -144,6 +144,14 @@ async fn detect_shells() -> Result<Vec<maintenance::terminal::ShellInfo>, NiTriT
 
 #[tauri::command]
 async fn run_in_shell(shell_id: String, command: String) -> Result<maintenance::terminal::ShellResult, NiTriTeError> {
+    // Sécurité : longueur maximale de la commande pour éviter les abus
+    if command.len() > 8192 {
+        return Err(NiTriTeError::System("Commande trop longue (max 8192 caractères)".into()));
+    }
+    // Sécurité : bloquer les caractères nuls qui peuvent tronquer les arguments
+    if command.contains('\0') {
+        return Err(NiTriTeError::System("Commande contient des caractères nuls invalides".into()));
+    }
     tokio::task::spawn_blocking(move || maintenance::terminal::run_in_shell(&shell_id, &command, 120))
         .await
         .map_err(|e| NiTriTeError::System(e.to_string()))?
