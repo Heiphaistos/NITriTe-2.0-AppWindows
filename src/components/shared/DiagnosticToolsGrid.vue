@@ -10,32 +10,33 @@ interface ToolDef {
   label: string;
   emoji: string;
   type: "portable" | "exe" | "url" | "cmd" | "battery";
-  match?: string;     // portable: id.includes(match)
-  exclude?: string;   // portable: !id.includes(exclude)
-  path?: string;      // exe: relative from logiciel/
-  url?: string;       // url
-  cmd?: string;       // cmd: passed to execute_tool
+  match?: string;        // portable: id.includes(match)
+  exclude?: string;      // portable: !id.includes(exclude)
+  path?: string;         // exe: relative from logiciel/
+  url?: string;          // url
+  cmd?: string;          // cmd: passed to execute_tool
+  officialUrl?: string;  // portable: fallback si non trouvé
 }
 
 const TOOLS: ToolDef[] = [
   { label: "Test Clavier AZERTY",             emoji: "⌨️",  type: "url",      url: "https://www.test-clavier.fr/" },
-  { label: "CrystalDiskInfo",                 emoji: "💿",  type: "portable", match: "crystaldisk",    exclude: "mark" },
+  { label: "CrystalDiskInfo",                 emoji: "💿",  type: "portable", match: "crystaldisk",    exclude: "mark", officialUrl: "https://crystalmark.info/en/software/crystaldiskinfo/" },
   { label: "OCCT (Temp & Stress)",             emoji: "🌡️",  type: "url",      url: "https://www.ocbase.com/download" },
   { label: "Test Batterie OrdiPlus",           emoji: "🔋",  type: "exe",      path: "Standalone Tools/Ordi Plus - Battery Tester.exe" },
   { label: "Test Batterie NiTrite",            emoji: "⚡",  type: "battery" },
-  { label: "Autoruns",                         emoji: "🚀",  type: "portable", match: "autoruns" },
-  { label: "Malwarebytes Portable",            emoji: "🛡️",  type: "portable", match: "malwarebytes" },
+  { label: "Autoruns",                         emoji: "🚀",  type: "portable", match: "autoruns",      officialUrl: "https://learn.microsoft.com/en-us/sysinternals/downloads/autoruns" },
+  { label: "Malwarebytes Portable",            emoji: "🛡️",  type: "portable", match: "malwarebytes",  officialUrl: "https://www.malwarebytes.com/mwb-download/" },
   { label: "Spybot Search & Destroy",          emoji: "🕵️",  type: "portable", match: "spybot" },
   { label: "BulkCrap Uninstaller",         emoji: "🗑️",  type: "portable", match: "bcuninstaller" },
   { label: "GetDataBack (Récupération)",   emoji: "💾",  type: "portable", match: "getdataback" },
   { label: "WinDirStat",                   emoji: "📊",  type: "url",      url: "https://windirstat.net/download.html" },
-  { label: "Process Explorer (Sysinternals)",emoji:"🔍", type: "portable", match: "processexplorer" },
-  { label: "AdwCleaner Portable",              emoji: "🧹",  type: "portable", match: "adwcleaner" },
+  { label: "Process Explorer (Sysinternals)",emoji:"🔍", type: "portable", match: "processexplorer", officialUrl: "https://learn.microsoft.com/en-us/sysinternals/downloads/process-explorer" },
+  { label: "AdwCleaner Portable",              emoji: "🧹",  type: "portable", match: "adwcleaner",     officialUrl: "https://www.malwarebytes.com/adwcleaner" },
   { label: "Wise Disk Cleaner",                emoji: "💾",  type: "portable", match: "wisedisk" },
-  { label: "HWMonitor",                        emoji: "📊",  type: "portable", match: "hwmonitor",     exclude: "portable" },
-  { label: "HWinfo",                           emoji: "🖥️",  type: "portable", match: "hwinfo" },
-  { label: "CrystalDiskMark",                  emoji: "⚡",  type: "portable", match: "crystaldiskmark" },
-  { label: "CPU-Z",                            emoji: "🔬",  type: "portable", match: "cpu" },
+  { label: "HWMonitor",                        emoji: "📊",  type: "portable", match: "hwmonitor",     exclude: "portable", officialUrl: "https://www.cpuid.com/softwares/hwmonitor.html" },
+  { label: "HWinfo",                           emoji: "🖥️",  type: "portable", match: "hwinfo",        officialUrl: "https://www.hwinfo.com/download/" },
+  { label: "CrystalDiskMark",                  emoji: "⚡",  type: "portable", match: "crystaldiskmark", officialUrl: "https://crystalmark.info/en/software/crystaldiskmark/" },
+  { label: "CPU-Z",                            emoji: "🔬",  type: "portable", match: "cpu",            officialUrl: "https://www.cpuid.com/softwares/cpu-z.html" },
   { label: "GPU-Z",                            emoji: "🎮",  type: "exe",      path: "Standalone Tools/GPU-Z.0.7.0.exe" },
   { label: "Wise Care 365",                    emoji: "✨",  type: "portable", match: "wisecare" },
   { label: "UserDiag (Diagnostic Complet)",    emoji: "🔍",  type: "portable", match: "userdiag" },
@@ -78,7 +79,12 @@ async function launchTool(tool: ToolDef) {
     } else if (tool.type === "portable") {
       const appId = findPortableId(tool.match!, tool.exclude);
       if (!appId) {
-        notify.warning(`${tool.label} non trouvé`, "Vérifiez que l'outil est dans le dossier logiciel/");
+        if (tool.officialUrl) {
+          notify.info(`${tool.label} non trouvé — ouverture du site officiel`, "");
+          await invoke("open_url", { url: tool.officialUrl });
+        } else {
+          notify.warning(`${tool.label} non trouvé`, "Vérifiez que l'outil est dans le dossier logiciel/");
+        }
         return;
       }
       await invoke("launch_portable", { appId });

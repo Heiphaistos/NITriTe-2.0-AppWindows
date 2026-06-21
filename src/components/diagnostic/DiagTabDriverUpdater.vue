@@ -69,7 +69,21 @@ async function launchSdi() {
     await invoke("launch_sdi");
   } catch (e) {
     (window as any).__nitrite_sdi_active = false;
-    notify.error("SDI introuvable", String(e));
+    notify.warning("SDI non trouvé sur ce PC", "Redirection vers le site officiel...");
+    await invoke("open_url", { url: "https://www.snappy-driver-installer.org/download/" }).catch(() => {});
+  }
+}
+
+async function chooseSdiLocation() {
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const result = await open({ title: "Sélectionner SDI.exe", filters: [{ name: "Exécutable", extensions: ["exe"] }] });
+    if (result && typeof result === "string") {
+      await invoke("run_system_command", { cmd: result, args: [] });
+      notify.success("SDI lancé !", result);
+    }
+  } catch (e: any) {
+    notify.error("Erreur lancement SDI", String(e));
   }
 }
 
@@ -176,9 +190,14 @@ function errLabel(code: number) {
         Compatible avec les packs de drivers extraits (SDIO / DriverPack Solution / manuel).
         Scanne les fichiers <code>.inf</code> pour trouver les pilotes correspondants à votre matériel.
       </p>
-      <button @click="launchSdi" style="margin-top:10px;padding:6px 14px;background:var(--accent);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px">
-        <Zap :size="13" /> Snappy Driver Installer
-      </button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button @click="launchSdi" style="padding:6px 14px;background:var(--accent);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+          <Zap :size="13" /> Snappy Driver Installer
+        </button>
+        <button @click="chooseSdiLocation" style="padding:6px 14px;background:var(--bg-secondary);color:var(--text-secondary);border:1px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+          <FolderOpen :size="13" /> Choisir emplacement SDI...
+        </button>
+      </div>
     </div>
 
     <!-- Étape 1 : Scanner le matériel -->

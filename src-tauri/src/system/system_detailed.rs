@@ -102,7 +102,7 @@ struct WmiVideoController {
 struct WmiPhysicalMemory {
     BankLabel: Option<String>, DeviceLocator: Option<String>, Manufacturer: Option<String>,
     Capacity: Option<u64>, Speed: Option<u32>, ConfiguredClockSpeed: Option<u32>,
-    MemoryType: Option<u32>, FormFactor: Option<u32>,
+    MemoryType: Option<u32>, SMBIOSMemoryType: Option<u32>, FormFactor: Option<u32>,
     SerialNumber: Option<String>, PartNumber: Option<String>, DataWidth: Option<u32>,
 }
 
@@ -140,7 +140,12 @@ fn fmt_date(s: &str) -> String {
 }
 
 fn mem_type_str(v: u32) -> &'static str {
-    match v { 20 => "DDR", 21 => "DDR2", 24 => "DDR3", 26 => "DDR4", 30 | 34 => "DDR5", _ => "Unknown" }
+    match v {
+        20 => "DDR", 21 => "DDR2", 22 | 23 => "DDR2 FB-DIMM",
+        24 => "DDR3", 26 => "DDR4", 34 | 43 => "DDR5",
+        30 => "LPDDR4", 35 => "LPDDR", 37 => "LPDDR3", 38 => "LPDDR4",
+        40 | 44 => "LPDDR5", _ => "Inconnu",
+    }
 }
 
 fn form_factor_str(v: u32) -> &'static str {
@@ -234,7 +239,12 @@ pub async fn get_ram_detailed() -> Result<RamDetailed, String> {
                 capacity_gb: cap,
                 speed_mhz: m.Speed.unwrap_or(0),
                 configured_speed_mhz: m.ConfiguredClockSpeed.unwrap_or(0),
-                memory_type: mem_type_str(m.MemoryType.unwrap_or(0)).to_string(),
+                // SMBIOSMemoryType est plus fiable que MemoryType sur Win10/11 (MemoryType retourne 0)
+                memory_type: {
+                    let t = m.SMBIOSMemoryType.unwrap_or(0);
+                    let t = if t == 0 { m.MemoryType.unwrap_or(0) } else { t };
+                    mem_type_str(t).to_string()
+                },
                 form_factor: form_factor_str(m.FormFactor.unwrap_or(0)).to_string(),
                 serial_number: m.SerialNumber.unwrap_or_default(),
                 part_number: m.PartNumber.unwrap_or_default().trim().to_string(),

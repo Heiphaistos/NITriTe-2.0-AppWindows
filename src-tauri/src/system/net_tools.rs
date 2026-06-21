@@ -448,14 +448,14 @@ pub struct BandwidthResult { pub download_mbps: f64, pub latency_ms: f64, pub te
 
 #[tauri::command]
 pub fn test_bandwidth() -> BandwidthResult {
-    // Simple: download 10MB from Cloudflare speed test server
+    // Download 50MB from Cloudflare speed test server (accurate on high-speed connections)
     let ps = r#"
 try {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $ping = [math]::Round((Test-Connection '1.1.1.1' -Count 2 -ErrorAction SilentlyContinue | Measure-Object ResponseTime -Average).Average, 1)
     $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
     $wc = New-Object System.Net.WebClient
-    $data = $wc.DownloadData('https://speed.cloudflare.com/__down?bytes=5000000')
+    $data = $wc.DownloadData('https://speed.cloudflare.com/__down?bytes=50000000')
     $sw2.Stop()
     $mb = $data.Length / 1048576
     $secs = $sw2.Elapsed.TotalSeconds

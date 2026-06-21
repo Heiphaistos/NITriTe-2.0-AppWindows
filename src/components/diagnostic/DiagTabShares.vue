@@ -18,6 +18,12 @@ async function openComputerMgmt() {
   await invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "compmgmt.msc"] }).catch(() => {});
 }
 
+async function openPrinterMgmt() {
+  await invoke("run_system_command", { cmd: "control", args: ["printers"] }).catch(() => {
+    invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "ms-settings:printers"] }).catch(() => {});
+  });
+}
+
 async function disconnectAllSessions() {
   if (!confirm("Déconnecter toutes les sessions SMB actives ?")) return;
   actionLoading.value = true;
@@ -75,6 +81,9 @@ onMounted(async () => {
       </NButton>
       <NButton variant="ghost" size="sm" @click="openComputerMgmt">
         <Settings :size="13" /> Gestion de l'ordinateur
+      </NButton>
+      <NButton variant="ghost" size="sm" @click="openPrinterMgmt">
+        <Settings :size="13" /> Gestion des imprimantes
       </NButton>
       <NButton v-if="data && data.smb_sessions.length > 0" variant="danger" size="sm"
         :disabled="actionLoading" @click="disconnectAllSessions">

@@ -174,7 +174,20 @@ async function addEntry() {
 }
 async function deleteEntry(n: number) { try { await invoke<string>('delete_hosts_entry', { lineNumber: n }); showMsg('Supprimé'); await loadEntries() } catch(e) { showMsg(String(e), true) } }
 async function toggleEntry(n: number, en: boolean) { try { await invoke<string>('toggle_hosts_entry', { lineNumber: n, enable: en }); await loadEntries() } catch(e) { showMsg(String(e), true) } }
-async function doBackup() { try { showMsg(await invoke<string>('backup_hosts')) } catch(e) { showMsg(String(e), true) } }
+async function doBackup() {
+  try {
+    const content = await invoke<string>('get_hosts_raw');
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const filePath = await save({
+      defaultPath: 'hosts.bak',
+      filters: [{ name: 'Sauvegarde', extensions: ['bak'] }]
+    });
+    if (!filePath) return;
+    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+    await writeTextFile(filePath, content);
+    showMsg('Sauvegarde enregistrée : ' + filePath);
+  } catch (e: any) { showMsg('Erreur sauvegarde : ' + String(e), true); }
+}
 
 function ipClass(ip: string) { if (ip.startsWith('127.')) return 'ip-localhost'; if (ip.startsWith('::1') || ip === '0.0.0.0') return 'ip-special'; return 'ip-normal'; }
 

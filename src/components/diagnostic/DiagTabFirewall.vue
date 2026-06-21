@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { invoke } from "@/utils/invoke";
-import { cachedInvoke } from "@/composables/useCachedInvoke";
 import NBadge from "@/components/ui/NBadge.vue";
 import NSpinner from "@/components/ui/NSpinner.vue";
 import NButton from "@/components/ui/NButton.vue";
@@ -70,7 +69,7 @@ const { exportCSV } = useExportData();
 
 onMounted(async () => {
   try {
-    data.value = await cachedInvoke<FirewallInfo>("get_firewall_rules");
+    data.value = await invoke<FirewallInfo>("get_firewall_rules", undefined, 60000);
   } catch (e: any) { error.value = e?.toString() ?? "Erreur"; }
   finally { loading.value = false; }
 });

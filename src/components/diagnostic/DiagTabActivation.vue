@@ -45,12 +45,16 @@ function keyTypeVariant(t: string): "success"|"warning"|"info"|"default" {
 
 async function openMas() {
   activating.value = true;
-  statusMsg.value = "Ouverture de la fenêtre d'activation MAS...";
+  statusMsg.value = "Lancement de MAS en administrateur...";
   try {
-    await invoke("open_mas_window");
-    statusMsg.value = "Fenêtre d'activation ouverte. Suivez les instructions à l'écran.";
-  } catch (e: any) {
-    statusMsg.value = "Erreur : " + e;
+    const cmd1 = `powershell -WindowStyle Hidden -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -WindowStyle Normal -Command irm https://get.activated.win | iex'"`;
+    await invoke("execute_script", { content: cmd1, scriptType: "cmd" }).catch(async () => {
+      const cmd2 = `powershell -WindowStyle Hidden -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -WindowStyle Normal -Command [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://get.activated.win | iex'"`;
+      await invoke("execute_script", { content: cmd2, scriptType: "cmd" });
+    });
+    statusMsg.value = "Fenêtre PowerShell MAS ouverte. Suivez les instructions à l'écran.";
+  } catch {
+    statusMsg.value = "Erreur: lancez manuellement: irm https://get.activated.win | iex";
   }
   activating.value = false;
 }
@@ -195,6 +199,9 @@ function actStatus(s: string): "success" | "danger" | "warning" | "default" {
         </NButton>
         <NButton variant="ghost" size="sm" @click="invoke('open_url', { url: 'https://github.com/massgravel/Microsoft-Activation-Scripts' }).catch(() => {})">
           <ExternalLink :size="12" /> GitHub MAS
+        </NButton>
+        <NButton variant="ghost" size="sm" @click="invoke('open_url', { url: 'https://massgrave.dev/office_c2r_links' }).catch(() => {})">
+          <ExternalLink :size="12" /> Télécharger Office (Français)
         </NButton>
       </div>
 

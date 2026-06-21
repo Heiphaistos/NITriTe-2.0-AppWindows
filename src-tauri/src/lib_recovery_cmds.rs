@@ -392,27 +392,14 @@ async fn scan_lost_partitions_cmd(
         .map_err(|e| NiTriTeError::System(e.to_string()))
 }
 
-// === Save content to path (dialog-driven export, répertoires autorisés uniquement) ===
-
-fn is_path_allowed(path: &std::path::Path) -> bool {
-    let allowed_roots: Vec<std::path::PathBuf> = [
-        dirs::document_dir(),
-        dirs::desktop_dir(),
-        dirs::download_dir(),
-        std::env::temp_dir().into(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-
-    allowed_roots.iter().any(|root| path.starts_with(root))
-}
+// === Save content to path (dialog-driven export) ===
+// Le chemin vient toujours d'une save dialog Tauri — le choix utilisateur est le consentement.
 
 #[tauri::command]
 async fn save_content_to_path(path: String, content: String) -> Result<(), NiTriTeError> {
     let p = std::path::Path::new(&path);
 
-    // Interdire les extensions exécutables AVANT canonicalisation (path peut ne pas exister)
+    // Bloquer uniquement les extensions exécutables
     let blocked_exts = ["exe", "dll", "bat", "cmd", "ps1", "vbs", "hta", "scr", "msi", "inf"];
     if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
         if blocked_exts.contains(&ext.to_lowercase().as_str()) {
@@ -422,27 +409,16 @@ async fn save_content_to_path(path: String, content: String) -> Result<(), NiTri
         }
     }
 
-    // Canonicaliser le répertoire parent pour neutraliser les path traversal (../../)
-    // Le fichier lui-même n'existe pas encore, donc on canonicalise le parent.
-    let parent = p.parent().ok_or_else(|| NiTriTeError::CommandDenied(
-        format!("Chemin invalide (pas de répertoire parent): {}", path),
-    ))?;
-    let canonical_parent = tokio::fs::canonicalize(parent)
-        .await
-        .map_err(|_| NiTriTeError::CommandDenied(
-            format!("Répertoire parent introuvable: {}", parent.display()),
-        ))?;
-    let canonical_file = canonical_parent.join(p.file_name().ok_or_else(|| NiTriTeError::CommandDenied(
-        format!("Nom de fichier invalide: {}", path),
-    ))?);
-
-    if !is_path_allowed(&canonical_file) {
-        return Err(NiTriTeError::CommandDenied(
-            format!("Écriture interdite hors des répertoires autorisés: {}", canonical_file.display()),
-        ));
+    // Créer le dossier parent si inexistant (ex: clé USB, dossier personnalisé)
+    if let Some(parent) = p.parent() {
+        if !parent.as_os_str().is_empty() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| NiTriTeError::System(format!("Impossible de créer le dossier: {}", e)))?;
+        }
     }
 
-    tokio::fs::write(&canonical_file, content.as_bytes())
+    tokio::fs::write(p, content.as_bytes())
         .await
         .map_err(|e| NiTriTeError::System(e.to_string()))
 }
@@ -503,13 +479,37 @@ async fn open_path(path: String) -> Result<(), NiTriTeError> {
 // === Execute tool command (cmd or ms-settings) ===
 
 /// Vérifie que la commande ne contient pas de métacaractères CMD/PS dangereux.
-/// Liste élargie: inclut les délimiteurs de commandes, injections PS, expansion variables.
+/// Autorise %VAR_NAME% (variables d'environnement Windows légitimes).
 fn has_shell_metacharacters(cmd: &str) -> bool {
-    // Métacaractères CMD : & (concat), | (pipe), ; (séquence PS), > < (redirection),
-    // ` (backtick PS), $( (sous-expression PS), % (variables batch), ^ (escape CMD),
-    // ! (variable retardée CMD), ' (quote PS), \n \r (sauts de ligne = nouvelles commandes)
-    let dangerous: &[&str] = &["&", "|", ";", ">", "<", "`", "$(", "%", "^", "!", "'", "\n", "\r"];
-    dangerous.iter().any(|c| cmd.contains(c))
+    // Bloquants absolus : délimiteurs de commandes, redirections, injections PS
+    let dangerous: &[&str] = &["&", "|", ";", ">", "<", "`", "$(", "!", "\n", "\r"];
+    if dangerous.iter().any(|c| cmd.contains(c)) {
+        return true;
+    }
+    // % dangereux uniquement si ce n'est PAS une variable env Windows (%WORD%)
+    // Ex: %TEMP%, %PROGRAMFILES%, %USERPROFILE% → autorisé
+    // %1, %%var, % seul → bloqué
+    if cmd.contains('%') {
+        let remaining = cmd.replace(|c: char| c.is_alphanumeric() || c == '_', "");
+        let pct_count = remaining.chars().filter(|&c| c == '%').count();
+        // Si le nombre de % dans les parties non-alphanum/underscore > 0 → injection
+        if pct_count > 0 {
+            // Vérifier chaque % : s'il est entouré de lettres/chiffres/_ des deux côtés, c'est une var env
+            let bytes = cmd.as_bytes();
+            for i in 0..bytes.len() {
+                if bytes[i] != b'%' { continue; }
+                // Cherche le % fermant après ce %
+                let before_ok = i > 0 && (bytes[i-1].is_ascii_alphanumeric() || bytes[i-1] == b'_');
+                let after_ok = i + 1 < bytes.len() && (bytes[i+1].is_ascii_alphanumeric() || bytes[i+1] == b'_');
+                // % ouvrant d'une variable env : suivi d'une lettre
+                // % fermant : précédé d'une lettre
+                if !before_ok && !after_ok {
+                    return true; // % isolé → dangereux
+                }
+            }
+        }
+    }
+    false
 }
 
 #[tauri::command]

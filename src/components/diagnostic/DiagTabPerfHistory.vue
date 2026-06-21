@@ -162,7 +162,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { invoke } from "@/utils/invoke";
+import { invoke, invokeRaw } from "@/utils/invoke";
 import { Activity, Play, Cpu, RefreshCw, TrendingUp, Clock, HardDrive as MemoryStick, List as Table } from 'lucide-vue-next'
 
 interface PerfPoint {
@@ -186,7 +186,7 @@ const maxRam = computed(() => {
 
 async function runHistory() {
   loading.value = true; history.value = null; progressPts.value = 0
-  try { history.value = await invoke<PerfHistory>('get_perf_history', { samples: samples.value, intervalSecs: interval.value }) }
+  try { history.value = await invokeRaw<PerfHistory>('get_perf_history', { samples: samples.value, intervalSecs: interval.value }) }
   finally { loading.value = false }
 }
 

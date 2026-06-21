@@ -6,7 +6,7 @@ import NButton from "@/components/ui/NButton.vue";
 import DiagBanner from "@/components/ui/DiagBanner.vue";
 import { Globe, Wifi, Search, Server, Activity } from "lucide-vue-next";
 import { useExportData } from '@/composables/useExportData';
-import { invoke } from "@/utils/invoke";
+import { invoke, invokeRaw } from "@/utils/invoke";
 const { exportCSV, exportTXT } = useExportData();
 
 function exportPingResult(result: PingResult | null) {
@@ -80,7 +80,16 @@ async function inv<T>(cmd: string, args?: any): Promise<T|null> {
 }
 
 async function doPing() { pingLoading.value=true; pingResult.value=null; pingResult.value=await inv("run_ping",{host:pingHost.value,count:pingCount.value}); pingLoading.value=false; }
-async function doTracert() { tracertLoading.value=true; tracertHops.value=[]; tracertHops.value=await inv("run_traceroute",{host:tracertHost.value})??[]; tracertLoading.value=false; }
+async function doTracert() {
+  tracertLoading.value=true;
+  tracertHops.value=[];
+  try {
+    tracertHops.value = await invokeRaw<TracertHop[]>("run_traceroute", { host: tracertHost.value }) ?? [];
+  } catch {
+    tracertHops.value = [];
+  }
+  tracertLoading.value=false;
+}
 async function doNslookup() { nsLoading.value=true; nsResult.value=await inv("run_nslookup",{host:nsHost.value,recordType:nsType.value}); nsLoading.value=false; }
 async function doArp() { arpLoading.value=true; arpTable.value=await inv("get_arp_table")??[]; arpLoading.value=false; }
 async function doRoute() { routeLoading.value=true; routeTable.value=await inv("get_route_table")??[]; routeLoading.value=false; }
@@ -196,6 +205,9 @@ const filteredOpenPorts = () => openPorts.value.filter(p=>!openPortFilter.value|
             </tbody>
           </table>
           <NButton variant="ghost" size="sm" @click="exportTracertResult(tracertHops)" style="margin-top:6px">↓ Export CSV</NButton>
+        </div>
+        <div v-else style="font-size:12px;color:var(--text-secondary)">
+          Aucun saut détecté. Vérifiez la connectivité ou essayez une adresse IP directement.
         </div>
       </div>
 
@@ -367,7 +379,7 @@ const filteredOpenPorts = () => openPorts.value.filter(p=>!openPortFilter.value|
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <p class="diag-section-label" style="margin:0">Test de débit internet</p>
           <button @click="doBandwidth" :disabled="bwLoading" style="padding:4px 12px;background:var(--accent);color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px">
-            <NSpinner v-if="bwLoading" :size="11" />Tester (5MB)
+            <NSpinner v-if="bwLoading" :size="11" />Tester (50MB)
           </button>
         </div>
         <div v-if="bwLoading" class="diag-loading"><div class="diag-spinner"></div> Téléchargement 5MB depuis Cloudflare...</div>

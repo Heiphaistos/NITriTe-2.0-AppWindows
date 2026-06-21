@@ -219,7 +219,7 @@ function openDxDiag() {
 .gpu-temp-card {
   display:flex; flex-direction:column; align-items:center;
   background:var(--bg-secondary); border:1px solid var(--border);
-  border-radius:10px; padding:14px 20px; gap:5px; min-width:150px;
+  border-radius:10px; padding:14px 20px; gap:5px; min-width:220px;
   transition:border-color .2s, box-shadow .2s;
 }
 .gpu-temp-card:hover { border-color:var(--border-hover); box-shadow:0 4px 12px rgba(0,0,0,.15); }
@@ -236,7 +236,7 @@ function openDxDiag() {
 .gpu-temp-warm .gpu-temp-value { color:var(--warning); }
 .gpu-temp-hot  .gpu-temp-value { color:var(--danger); }
 .gpu-temp-na   .gpu-temp-value { color:var(--text-muted); }
-.gpu-temp-name { font-size:11px; font-weight:600; text-align:center; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); }
+.gpu-temp-name { font-size:11px; font-weight:600; text-align:center; max-width:205px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); }
 .gpu-temp-src  { font-size:10px; color:var(--text-muted); }
 .gpu-temp-bar  { width:100%; height:4px; background:var(--border); border-radius:2px; overflow:hidden; margin-top:2px; }
 .gpu-temp-fill { height:100%; border-radius:2px; transition:width .5s ease; }

@@ -38,17 +38,6 @@ const sidebarCollapsed = ref(false);
 const searchOpen       = ref(false);
 const shortcutsOpen    = ref(false);
 const appReady         = ref(false);
-const videoMuted  = ref(true);
-const splashVideo = ref<HTMLVideoElement | null>(null);
-const splashAudio = ref<HTMLAudioElement | null>(null);
-
-function toggleMute() {
-  const a = splashAudio.value;
-  if (!a) return;
-  // Volume uniquement — jamais de play()/pause() sur clic (bloquant dans WebView2)
-  a.volume = videoMuted.value ? 1 : 0;
-  videoMuted.value = !videoMuted.value;
-}
 
 // ── Preloader ──────────────────────────────────────────────────────────────────
 interface LoadTask { label: string; status: "pending" | "running" | "done" | "error" }
@@ -132,23 +121,6 @@ onMounted(async () => {
 
   await nextTick();
 
-  // ── PRIORITÉ 1 : démarrer vidéo (toujours muette) + pré-chauffer l'audio ────
-  // La vidéo reste MUETTE en permanence — aucun pipeline audio lié au rendu vidéo.
-  // L'audio est géré par un élément <audio> séparé, évitant tout freeze compositor.
-  const v = splashVideo.value;
-  if (v) {
-    v.muted = true;
-    await v.play().catch(() => {});
-  }
-
-  // Démarrer l'audio en silence dès le chargement — il joue en continu,
-  // le toggle change uniquement le volume (opération non-bloquante)
-  const a = splashAudio.value;
-  if (a) {
-    a.volume = 0;
-    await a.play().catch(() => {});
-  }
-
   // ── Tâche 0 : Interface (synchrone) ──
   loadTasks.value[0].status = "running";
   appStore.loadSavedTheme();
@@ -231,7 +203,6 @@ onMounted(async () => {
 
   // Transition vers l'app
   await new Promise(r => setTimeout(r, 400));
-  if (splashAudio.value) { splashAudio.value.volume = 0; splashAudio.value.pause(); }
   appReady.value = true;
 });
 </script>
@@ -241,40 +212,8 @@ onMounted(async () => {
   <Transition name="splash">
     <div v-if="!appReady" class="splash-screen">
 
-      <!-- ── Vidéo fond (toujours muette — audio géré séparément) ── -->
-      <video
-        ref="splashVideo"
-        class="splash-video"
-        src="/splash.mp4"
-        loop
-        playsinline
-        muted
-      />
-      <audio ref="splashAudio" src="/splash.mp4" loop preload="auto" style="display:none" />
-
-      <!-- ── Overlay dégradé ── -->
+      <!-- ── Fond statique ── -->
       <div class="splash-overlay" />
-
-      <!-- ── Bouton mute (coin haut droit) ── -->
-      <button
-        class="splash-mute-btn"
-        :title="videoMuted ? 'Activer le son' : 'Couper le son'"
-        @click.stop.prevent="toggleMute"
-      >
-        <!-- Son actif -->
-        <svg v-if="!videoMuted" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
-          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
-        </svg>
-        <!-- Son coupé -->
-        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-          <line x1="23" y1="9" x2="17" y2="15"/>
-          <line x1="17" y1="9" x2="23" y2="15"/>
-        </svg>
-        <span>{{ videoMuted ? 'Son coupé' : 'Son activé' }}</span>
-      </button>
 
       <!-- ── Panel de chargement (bas de l'écran) ── -->
       <div class="splash-content">
@@ -284,7 +223,7 @@ onMounted(async () => {
           <img :src="logoUrl" class="splash-logo" alt="NiTriTe" />
           <div class="splash-brand-text">
             <div class="splash-title">NiTriTe</div>
-            <div class="splash-version">v6.0.0</div>
+            <div class="splash-version">v6.3.0</div>
           </div>
         </div>
 
@@ -392,44 +331,12 @@ onMounted(async () => {
   background: #09090b; overflow: hidden;
 }
 
-/* Vidéo fond */
-.splash-video {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  object-fit: cover;
-  pointer-events: none;
-}
-
-/* Overlay dégradé — assombrit les bords pour lisibilité */
+/* Overlay fond statique — dégradé radial subtil sur fond noir */
 .splash-overlay {
   position: absolute; inset: 0;
-  background:
-    linear-gradient(to top,  rgba(9,9,11,0.92) 0%,  rgba(9,9,11,0.3) 40%, transparent 70%),
-    linear-gradient(to bottom, rgba(9,9,11,0.5) 0%, transparent 25%),
-    linear-gradient(to right, rgba(9,9,11,0.4) 0%, transparent 30%),
-    linear-gradient(to left,  rgba(9,9,11,0.4) 0%, transparent 30%);
+  background: radial-gradient(ellipse at 50% 30%, rgba(249,115,22,0.08) 0%, transparent 60%);
   pointer-events: none;
 }
-
-/* ── Bouton mute ── */
-.splash-mute-btn {
-  position: absolute; top: 16px; right: 16px; z-index: 10;
-  display: flex; align-items: center; gap: 7px;
-  padding: 8px 14px;
-  background: rgba(15,15,18,0.90);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 99px;
-  color: #e4e4e7; cursor: pointer;
-  font-family: inherit; font-size: 12px; font-weight: 500;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
-  letter-spacing: 0.02em;
-}
-.splash-mute-btn:hover {
-  background: rgba(249,115,22,0.18);
-  border-color: rgba(249,115,22,0.45);
-  color: #f97316;
-}
-.splash-mute-btn svg { flex-shrink: 0; }
 
 /* ── Panel chargement (bas de l'écran) ── */
 .splash-content {

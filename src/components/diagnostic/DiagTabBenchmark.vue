@@ -93,7 +93,7 @@
           <div v-for="r in disk.results" :key="r.name" class="bench-disk-row">
             <div class="bench-disk-label">
               <span class="bench-disk-name">{{ r.name }}</span>
-              <code class="bench-disk-score">{{ r.score.toFixed(0) }} {{ r.unit }}</code>
+              <code class="bench-disk-score">{{ r.score?.toFixed(0) ?? '—' }} {{ r.unit }}</code>
             </div>
             <div class="bench-bar-bg" style="flex:1">
               <div class="bench-bar-fill" :style="{ width: diskPct(r) + '%', background: diskGrad(r) }" />
@@ -130,7 +130,7 @@
           <template v-for="r in disk.results" :key="r.name">
             <tr>
               <td>Disque — {{ r.name }}</td>
-              <td class="score-val">{{ r.score.toFixed(0) }}</td>
+              <td class="score-val">{{ r.score?.toFixed(0) ?? '—' }}</td>
               <td>{{ r.unit }}</td>
               <td>{{ r.duration_ms }}ms</td>
               <td><span class="bench-grade" :style="{ background: diskGrad(r) }">{{ diskRating(r) }}</span></td>
@@ -213,12 +213,13 @@ function loadHistory() {
 }
 
 function saveHistory() {
-  const seqR = disk.value.results.find(r => r.name.toLowerCase().includes('séq') && r.name.toLowerCase().includes('lect'))?.score
-    ?? disk.value.results.find(r => r.name.toLowerCase().includes('seq') && r.name.toLowerCase().includes('read'))?.score
-    ?? disk.value.results[0]?.score ?? null;
-  const seqW = disk.value.results.find(r => r.name.toLowerCase().includes('séq') && r.name.toLowerCase().includes('écrit'))?.score
-    ?? disk.value.results.find(r => r.name.toLowerCase().includes('seq') && r.name.toLowerCase().includes('write'))?.score
-    ?? disk.value.results[1]?.score ?? null;
+  const diskResults = Array.isArray(disk.value.results) ? disk.value.results : [];
+  const seqR = diskResults.find(r => r.name.toLowerCase().includes('séq') && r.name.toLowerCase().includes('lect'))?.score
+    ?? diskResults.find(r => r.name.toLowerCase().includes('seq') && r.name.toLowerCase().includes('read'))?.score
+    ?? diskResults[0]?.score ?? null;
+  const seqW = diskResults.find(r => r.name.toLowerCase().includes('séq') && r.name.toLowerCase().includes('écrit'))?.score
+    ?? diskResults.find(r => r.name.toLowerCase().includes('seq') && r.name.toLowerCase().includes('write'))?.score
+    ?? diskResults[1]?.score ?? null;
   const record: BenchRecord = {
     date: new Date().toLocaleString('fr-FR'),
     cpu: cpu.value.score,

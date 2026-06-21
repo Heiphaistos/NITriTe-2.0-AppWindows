@@ -43,6 +43,22 @@ async function openBatteryReport() {
   } finally { loading.value = false; }
 }
 
+async function exportBatteryReportToPC() {
+  loading.value = true;
+  try {
+    const srcPath = await invoke<string>("run_battery_report");
+    const { readTextFile } = await import("@tauri-apps/plugin-fs");
+    const content = await readTextFile(srcPath);
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const dest = await save({ defaultPath: "rapport-batterie.html", filters: [{ name: "HTML", extensions: ["html"] }] });
+    if (!dest) { loading.value = false; return; }
+    await invoke("save_content_to_path", { path: dest, content });
+    showMsg("Rapport batterie enregistré !");
+  } catch (e: any) {
+    showMsg(e?.toString() || "Erreur export batterie", true);
+  } finally { loading.value = false; }
+}
+
 async function activatePlan(guid: string, name: string) {
   loading.value = true;
   try {
@@ -67,10 +83,15 @@ async function setDefaultPrinter(printerName: string) {
 
 async function openDeviceManager() {
   try {
-    await invoke("open_device_manager", { deviceClass: "" });
-    showMsg("Gestionnaire de périphériques ouvert + scan en cours...");
-  } catch (e: any) {
-    showMsg(e || "Erreur ouverture gestionnaire", true);
+    await invoke("run_system_command", { cmd: "mmc", args: ["devmgmt.msc"] });
+    showMsg("Gestionnaire de périphériques ouvert !");
+  } catch {
+    try {
+      await invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "devmgmt.msc"] });
+      showMsg("Gestionnaire de périphériques ouvert !");
+    } catch (e: any) {
+      showMsg(e || "Erreur ouverture gestionnaire", true);
+    }
   }
 }
 
@@ -306,10 +327,14 @@ async function addUltimatePlan() {
       />
 
       <!-- Bouton rapport batterie -->
-      <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <NButton size="sm" variant="secondary" :disabled="loading" @click="openBatteryReport">
           <FileText :size="13" style="margin-right:5px" />
           {{ loading ? 'Génération...' : 'Rapport complet (HTML)' }}
+        </NButton>
+        <NButton size="sm" variant="ghost" :disabled="loading" @click="exportBatteryReportToPC">
+          <Download :size="13" style="margin-right:5px" />
+          Enregistrer sur PC
         </NButton>
       </div>
 

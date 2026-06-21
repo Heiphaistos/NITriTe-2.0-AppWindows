@@ -104,6 +104,11 @@ async function deleteValue(name: string) {
   } catch (e: any) { notify.error("Erreur registre", String(e)); }
 }
 
+async function openInRegedit(regPath: string) {
+  const ps = `$p="${regPath}".Replace("HKLM:","HKEY_LOCAL_MACHINE").Replace("HKCU:","HKEY_CURRENT_USER").Replace("HKLM\\\\","HKEY_LOCAL_MACHINE\\\\").Replace("HKCU\\\\","HKEY_CURRENT_USER\\\\"); try { Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Applets\\Regedit' -Name 'LastKey' -Value $p -ErrorAction Stop } catch {}; Start-Process regedit.exe`;
+  await invoke("run_system_command", { cmd: "powershell", args: ["-WindowStyle", "Hidden", "-Command", ps] }).catch(() => {});
+}
+
 function kindVariant(kind: string): "info" | "warning" | "success" | "neutral" {
   if (kind === "String" || kind === "ExpandString") return "info";
   if (kind === "DWord" || kind === "QWord") return "success";
@@ -335,6 +340,7 @@ function exportRegKey() {
             <code style="font-size:11px;color:var(--accent)">{{ e.name }}</code>
             <NBadge :variant="e.hive === 'HKLM' ? 'info' : 'neutral'" style="font-size:9px">{{ e.hive }}</NBadge>
             <NBadge v-if="e.suspicious" variant="danger" style="font-size:9px">SUSPECT</NBadge>
+            <button class="val-btn" style="font-size:10px;padding:1px 6px;width:auto" @click="openInRegedit(e.key)" title="Ouvrir dans Regedit">↗ Regedit</button>
           </div>
           <div class="muted" style="font-size:11px;padding-left:20px;word-break:break-all">{{ e.value }}</div>
         </div>
@@ -359,6 +365,7 @@ function exportRegKey() {
           <AlertTriangle :size="12" class="ic-warn" style="flex-shrink:0" />
           <code class="list-name">{{ e.key.split('\\').pop() }}</code>
           <div class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;font-size:11px">→ {{ e.value }}</div>
+          <button class="val-btn" style="font-size:10px;padding:1px 6px;width:auto;flex-shrink:0" @click="openInRegedit(e.key)" title="Ouvrir dans Regedit">↗ Regedit</button>
         </div>
       </div>
 
@@ -370,6 +377,7 @@ function exportRegKey() {
           <AlertTriangle :size="12" class="ic-warn" style="flex-shrink:0" />
           <code class="list-name">{{ e.name }}</code>
           <div class="muted" style="flex:1;font-size:11px">{{ e.value }}</div>
+          <button class="val-btn" style="font-size:10px;padding:1px 6px;width:auto;flex-shrink:0" @click="openInRegedit(e.key)" title="Ouvrir dans Regedit">↗ Regedit</button>
         </div>
       </div>
 
@@ -388,6 +396,7 @@ function exportRegKey() {
         <div v-for="(e, i) in data.browser_hijack" :key="i" class="list-row">
           <code class="list-name">{{ e.name }}</code>
           <div class="muted" style="flex:1;font-size:11px">{{ e.value }}</div>
+          <button class="val-btn" style="font-size:10px;padding:1px 6px;width:auto;flex-shrink:0" @click="openInRegedit(e.key)" title="Ouvrir dans Regedit">↗ Regedit</button>
         </div>
       </div>
     </div>

@@ -395,7 +395,7 @@ async fn set_default_printer(printer_name: String) -> Result<String, String> {
 /// Génère et ouvre le rapport HTML de batterie
 #[tauri::command]
 async fn open_battery_report_html() -> Result<(), String> {
-    let output_path = std::env::temp_dir().join("nitrite-battery-report.html");
+    let output_path = crate::utils::paths::temp_dir().join("nitrite-battery-report.html");
     let output_str = output_path.to_string_lossy().to_string();
     let out = output_str.clone();
     tokio::task::spawn_blocking(move || {

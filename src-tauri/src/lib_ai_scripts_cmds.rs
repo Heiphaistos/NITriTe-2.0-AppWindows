@@ -461,7 +461,7 @@ async fn launch_exe(relative_path: String) -> Result<(), NiTriTeError> {
 /// Génère un rapport batterie via powercfg et retourne le chemin HTML
 #[tauri::command]
 async fn run_battery_report() -> Result<String, NiTriTeError> {
-    let output_path = std::env::temp_dir().join("nitrite-battery-report.html");
+    let output_path = crate::utils::paths::temp_dir().join("nitrite-battery-report.html");
     let output_str = output_path.to_string_lossy().to_string();
     let out = output_str.clone();
     tokio::task::spawn_blocking(move || {
@@ -479,13 +479,7 @@ async fn run_battery_report() -> Result<String, NiTriTeError> {
 // === Exports (dev + prod) ===
 
 fn nitrite_export_dir() -> Result<std::path::PathBuf, NiTriTeError> {
-    let docs = dirs::document_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join("Documents")))
-        .ok_or_else(|| NiTriTeError::System("Dossier Documents introuvable".into()))?;
-    let dir = docs.join("NiTriTe").join("exports");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| NiTriTeError::System(format!("mkdir exports: {}", e)))?;
-    Ok(dir)
+    Ok(crate::utils::paths::exports_dir())
 }
 
 #[tauri::command]

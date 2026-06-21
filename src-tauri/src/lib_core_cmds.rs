@@ -332,7 +332,11 @@ async fn cleanup_on_exit(app: tauri::AppHandle) -> Result<(), NiTriTeError> {
             }
         }
 
-        // 3. Fichiers temp Windows portant "nitrite" dans le nom
+        // 3. Dossier temp interne de l'app (rapports, fichiers temporaires)
+        let app_temp = crate::utils::paths::temp_dir();
+        if app_temp.exists() { let _ = std::fs::remove_dir_all(&app_temp); }
+
+        // 5. Fichiers temp Windows portant "nitrite" dans le nom
         if let Ok(temp) = std::env::var("TEMP") {
             if let Ok(entries) = std::fs::read_dir(&temp) {
                 for entry in entries.flatten() {
@@ -348,7 +352,7 @@ async fn cleanup_on_exit(app: tauri::AppHandle) -> Result<(), NiTriTeError> {
             }
         }
 
-        // 4. WebView2 data (cookies, cache) du dossier EBWebView
+        // 6. WebView2 data (cookies, cache) du dossier EBWebView
         if let Ok(appdata) = std::env::var("APPDATA") {
             let webview_cache = std::path::PathBuf::from(&appdata).join("com.nitrite.tool");
             for sub in &["logs", "tmp", "cache"] {

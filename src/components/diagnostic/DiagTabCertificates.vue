@@ -9,10 +9,18 @@ import { Lock, Search, ShieldAlert, Settings, ExternalLink } from "lucide-vue-ne
 import { useExportData } from "@/composables/useExportData";
 
 async function openCertManager() {
-  await invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "certmgr.msc"] }).catch(() => {});
+  try {
+    await invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "certmgr.msc"] });
+  } catch {
+    await invoke("execute_tool", { command: "certmgr.msc", isUrl: false }).catch(() => {});
+  }
 }
 async function openMachineCerts() {
-  await invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "certlm.msc"] }).catch(() => {});
+  try {
+    await invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "certlm.msc"] });
+  } catch {
+    await invoke("execute_tool", { command: "certlm.msc", isUrl: false }).catch(() => {});
+  }
 }
 
 interface CertEntry {
@@ -53,6 +61,60 @@ function doExportCerts() {
   })), 'certificats-' + new Date().toISOString().slice(0,10));
 }
 
+async function doExportCertsTxt() {
+  const lines = [
+    "=== CERTIFICATS NUMÉRIQUES — NiTriTe ===",
+    `Généré: ${new Date().toLocaleString()}`,
+    `Total: ${filtered.value.length} certificats`, "",
+    ...filtered.value.map(c => [
+      `Subject: ${c.subject}`, `Issuer: ${c.issuer}`, `Store: ${c.store}`,
+      `Début: ${c.not_before}`, `Fin: ${c.not_after}`,
+      `Statut: ${c.is_expired ? "EXPIRÉ" : "Valide"}`,
+      `Clé privée: ${c.has_private_key ? "Oui" : "Non"}`,
+      `Thumbprint: ${c.thumbprint}`, "---",
+    ].join("\n")),
+  ];
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ defaultPath: "certificats.txt", filters: [{ name: "TXT", extensions: ["txt"] }] });
+  if (path) await invoke("save_content_to_path", { path, content: lines.join("\n") });
+}
+
+async function doExportCertsMd() {
+  const rows = filtered.value.map(c =>
+    `| ${cn(c.subject)} | ${cn(c.issuer)} | ${c.store} | ${c.not_before} | ${c.not_after} | ${c.is_expired ? "**EXPIRÉ**" : "Valide"} |`
+  );
+  const md = [
+    "# Certificats Numériques — NiTriTe",
+    `> ${new Date().toLocaleString()}`,
+    "",
+    "| Sujet | Émetteur | Store | Début | Fin | Statut |",
+    "|---|---|---|---|---|---|",
+    ...rows,
+  ].join("\n");
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ defaultPath: "certificats.md", filters: [{ name: "Markdown", extensions: ["md"] }] });
+  if (path) await invoke("save_content_to_path", { path, content: md });
+}
+
+async function doExportCertsHtml() {
+  const rows = filtered.value.map(c =>
+    `<tr style="background:${c.is_expired ? 'rgba(239,68,68,0.08)' : ''}">
+      <td>${cn(c.subject)}</td><td>${cn(c.issuer)}</td><td>${c.store}</td>
+      <td>${c.not_before}</td><td style="color:${c.is_expired ? 'red' : 'inherit'}">${c.not_after}</td>
+      <td>${c.is_expired ? '<strong style="color:red">Expiré</strong>' : 'Valide'}</td>
+      <td>${c.has_private_key ? '🔑' : ''}</td>
+    </tr>`
+  ).join("");
+  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Certificats</title>
+<style>body{font-family:Segoe UI,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{padding:6px 10px;border:1px solid #ccc;font-size:12px}th{background:#f0f0f0}</style>
+</head><body><h2>Certificats Numériques — NiTriTe</h2><p>${new Date().toLocaleString()}</p>
+<table><thead><tr><th>Sujet</th><th>Émetteur</th><th>Store</th><th>Début</th><th>Fin</th><th>Statut</th><th>Clé</th></tr></thead>
+<tbody>${rows}</tbody></table></body></html>`;
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ defaultPath: "certificats.html", filters: [{ name: "HTML", extensions: ["html"] }] });
+  if (path) await invoke("save_content_to_path", { path, content: html });
+}
+
 const filtered = computed(() => {
   if (!data.value) return [];
   let list = data.value.certs;
@@ -79,9 +141,10 @@ const filtered = computed(() => {
       <NButton variant="ghost" size="sm" @click="openMachineCerts">
         <Settings :size="13" /> Gestionnaire certificats (machine)
       </NButton>
-      <NButton variant="ghost" size="sm" @click="doExportCerts">
-        ↓ Exporter CSV ({{ filtered.length }})
-      </NButton>
+      <NButton variant="ghost" size="sm" @click="doExportCerts">↓ CSV</NButton>
+      <NButton variant="ghost" size="sm" @click="doExportCertsTxt">↓ TXT</NButton>
+      <NButton variant="ghost" size="sm" @click="doExportCertsMd">↓ MD</NButton>
+      <NButton variant="ghost" size="sm" @click="doExportCertsHtml">↓ HTML</NButton>
     </div>
 
     <div v-if="loading" class="diag-loading"><div class="diag-spinner"></div> Chargement des certificats...</div>

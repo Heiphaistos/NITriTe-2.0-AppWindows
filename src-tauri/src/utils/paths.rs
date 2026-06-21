@@ -28,13 +28,23 @@ pub fn logs_dir() -> PathBuf {
     dir
 }
 
-/// Dossier de backups (Documents/NiTriTe/backups/)
+/// Dossier de backups (dans le dossier racine de l'app — zéro trace sur le PC client)
 pub fn backups_dir() -> PathBuf {
-    let dir = dirs::document_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join("Documents")))
-        .unwrap_or_else(app_root_dir)
-        .join("NiTriTe")
-        .join("backups");
+    let dir = app_root_dir().join("backups");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// Dossier temp interne (dans le dossier racine de l'app)
+pub fn temp_dir() -> PathBuf {
+    let dir = app_root_dir().join("temp");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// Dossier exports (dans le dossier racine de l'app)
+pub fn exports_dir() -> PathBuf {
+    let dir = app_root_dir().join("exports");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

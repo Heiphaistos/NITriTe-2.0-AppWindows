@@ -4,7 +4,7 @@
  */
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export class InvokeTimeoutError extends Error {
   constructor(cmd: string, ms: number) {
