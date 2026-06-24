@@ -180,8 +180,10 @@ function exportSessionTXT() {
 }
 function exportSessionJSON() {
   const blob = new Blob([JSON.stringify(filteredSession.value, null, 2)], { type: "application/json" });
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url;
   a.download = `nitrite-session-${new Date().toISOString().slice(0,10)}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function exportFileTXT() {
   const lines = filteredFile.value.map(e => `[${e.timestamp}] [${e.level}] [${e.source}] ${e.message}`);

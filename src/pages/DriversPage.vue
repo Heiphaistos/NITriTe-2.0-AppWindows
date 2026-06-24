@@ -68,8 +68,8 @@ interface DriverEntry {
 }
 
 const drivers = ref<DriverEntry[]>([]);
-const togglingIds = ref<Set<string>>(new Set());
-const rollingBackIds = ref<Set<string>>(new Set());
+const togglingIds = ref<string[]>([]);
+const rollingBackIds = ref<string[]>([]);
 
 // Drivers problématiques (Error / Degraded)
 const problematicDrivers = computed(() =>
@@ -244,7 +244,7 @@ async function rollbackDriver(d: DriverEntry) {
   );
   if (!confirmed) return;
 
-  rollingBackIds.value.add(driverKey(d));
+  rollingBackIds.value = [...rollingBackIds.value, driverKey(d)];
   try {
     await invoke("run_system_command", {
       cmd: "cmd",
@@ -254,7 +254,7 @@ async function rollbackDriver(d: DriverEntry) {
   } catch (e) {
     notifications.error(`Erreur ouverture Gestionnaire de périphériques`, String(e));
   }
-  rollingBackIds.value.delete(driverKey(d));
+  rollingBackIds.value = rollingBackIds.value.filter(x => x !== driverKey(d));
 }
 
 async function toggleDriver(d: DriverEntry) {
@@ -265,12 +265,18 @@ async function toggleDriver(d: DriverEntry) {
   if (!confirmed) return;
 
   const key = driverKey(d);
-  togglingIds.value.add(key);
+  togglingIds.value = [...togglingIds.value, key];
+  const instanceId = d.instance_id;
+  if (!instanceId || !/^[A-Z]+\\/i.test(instanceId)) {
+    notifications.error(`Identifiant PnP non disponible`, `Le driver "${d.displayName}" ne peut pas être activé/désactivé automatiquement.`);
+    togglingIds.value = togglingIds.value.filter(x => x !== key);
+    return;
+  }
   try {
-    const instanceId = d.instance_id ?? d.module;
+    const safeId = instanceId.replace(/'/g, "''");
     const psCmd = isRunning(d)
-      ? `Disable-PnpDevice -InstanceId '${instanceId}' -Confirm:$false`
-      : `Enable-PnpDevice -InstanceId '${instanceId}' -Confirm:$false`;
+      ? `Disable-PnpDevice -InstanceId '${safeId}' -Confirm:$false`
+      : `Enable-PnpDevice -InstanceId '${safeId}' -Confirm:$false`;
 
     await invoke("run_system_command", {
       cmd: "powershell",
@@ -285,11 +291,12 @@ async function toggleDriver(d: DriverEntry) {
         state: isRunning(d) ? "Stopped" : "Running",
       };
     }
-    notifications.success(`Driver "${d.displayName}" ${isRunning(d) ? "désactivé" : "activé"}`);
+    const newState = isRunning(d) ? "désactivé" : "activé";
+    notifications.success(`Driver "${d.displayName}" ${newState}`);
   } catch (e) {
     notifications.error(`Erreur toggle driver "${d.displayName}"`, String(e));
   }
-  togglingIds.value.delete(key);
+  togglingIds.value = togglingIds.value.filter(x => x !== key);
 }
 
 // Recommended drivers
@@ -493,7 +500,7 @@ onMounted(() => {
                         <NButton
                           variant="secondary"
                           size="sm"
-                          :loading="rollingBackIds.has(driverKey(d))"
+                          :loading="rollingBackIds.includes(driverKey(d))"
                           :title="`Rollback : ${d.displayName}`"
                           @click="rollbackDriver(d)"
                         >
@@ -504,7 +511,7 @@ onMounted(() => {
                         <NButton
                           :variant="isRunning(d) ? 'warning' : 'success'"
                           size="sm"
-                          :loading="togglingIds.has(driverKey(d))"
+                          :loading="togglingIds.includes(driverKey(d))"
                           :title="isRunning(d) ? 'Désactiver le driver' : 'Activer le driver'"
                           @click="toggleDriver(d)"
                         >

@@ -28,6 +28,22 @@ pub fn empty_recycle_bin() -> Result<CleanupResult, NiTriTeError> {
 
 pub fn clean_temp_files() -> Result<CleanupResult, NiTriTeError> {
     let temp_dir = std::env::temp_dir();
+
+    // Validation : %TEMP% doit pointer vers un répertoire utilisateur sûr
+    // pour éviter qu'un %TEMP% malicieux ne supprime des fichiers système
+    let temp_str = temp_dir.to_string_lossy().to_lowercase();
+    let is_safe = temp_str.contains(r"\appdata\local\temp")
+        || temp_str.contains(r"\temp")
+        || temp_str.contains(r"\tmp");
+    if !is_safe {
+        return Err(NiTriTeError::CommandDenied(
+            format!(
+                "Répertoire temporaire suspect (non autorisé pour suppression): {}",
+                temp_dir.display()
+            ),
+        ));
+    }
+
     let mut freed: u64 = 0;
 
     if let Ok(entries) = std::fs::read_dir(&temp_dir) {
@@ -50,7 +66,7 @@ pub fn clean_temp_files() -> Result<CleanupResult, NiTriTeError> {
 }
 
 pub fn run_disk_cleanup() -> Result<CleanupResult, NiTriTeError> {
-    let status = Command::new("cleanmgr").arg("/d").arg("C").creation_flags(0x08000000).status()?;
+    let status = Command::new("cleanmgr").arg("/d").arg("C:").creation_flags(0x08000000).status()?;
 
     Ok(CleanupResult {
         action: "Nettoyage disque Windows".into(),
@@ -67,7 +83,14 @@ pub fn get_startup_programs() -> Result<Vec<StartupEntry>, NiTriTeError> {
         .creation_flags(0x08000000).output()?;
 
     let text = String::from_utf8_lossy(&output.stdout);
-    let entries: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
+    let trimmed = text.trim();
+    // PowerShell retourne un objet JSON unique si un seul programme est trouvé
+    let entries: Vec<serde_json::Value> = serde_json::from_str(trimmed)
+        .or_else(|_| {
+            serde_json::from_str::<serde_json::Value>(trimmed)
+                .map(|obj| if obj.is_object() { vec![obj] } else { vec![] })
+        })
+        .unwrap_or_default();
 
     Ok(entries.iter().map(|e| StartupEntry {
         name: e["Name"].as_str().unwrap_or("").to_string(),

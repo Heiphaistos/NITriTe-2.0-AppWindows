@@ -219,19 +219,32 @@ fn parse_inf_meta(content: &str) -> (String, String, String) {
 
 // ─── Scan récursif des INF files ───────────────────────────────────────────────
 fn collect_inf_files(folder: &Path, max_files: usize) -> Vec<std::path::PathBuf> {
+    const MAX_DEPTH: usize = 12;
     let mut result = Vec::new();
-    let mut stack = vec![folder.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        if result.len() >= max_files { break; }
+    // Stack contient (chemin, profondeur)
+    let mut stack: Vec<(std::path::PathBuf, usize)> = vec![(folder.to_path_buf(), 0)];
+    // Ensemble des chemins canoniques déjà visités — détecte les cycles via symlinks
+    let mut visited: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
+    if let Ok(canon) = folder.canonicalize() { visited.insert(canon); }
+    while let Some((dir, depth)) = stack.pop() {
+        if result.len() >= max_files || depth >= MAX_DEPTH { continue; }
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
+                if result.len() >= max_files { break; }
                 let path = entry.path();
                 if path.is_dir() {
-                    stack.push(path);
+                    // Canonicalise pour détecter les symlinks cycliques
+                    match path.canonicalize() {
+                        Ok(canon) => {
+                            if visited.contains(&canon) { continue; } // cycle détecté
+                            visited.insert(canon);
+                        }
+                        Err(_) => continue, // chemin inaccessible ou symlink cassé
+                    }
+                    stack.push((path, depth + 1));
                 } else if let Some(ext) = path.extension() {
                     if ext.to_string_lossy().to_lowercase() == "inf" {
                         result.push(path);
-                        if result.len() >= max_files { break; }
                     }
                 }
             }
@@ -360,9 +373,9 @@ pub fn install_driver(inf_path: String) -> DriverInstallResult {
     let start = std::time::Instant::now();
     #[cfg(target_os = "windows")]
     {
-        let cmd = format!("pnputil /add-driver \"{}\" /install", inf_clean);
-        let o = Command::new("cmd")
-            .args(["/C", &cmd])
+        // Appel direct à pnputil sans passer par cmd /C — élimine l'injection via cmd.exe
+        let o = Command::new("pnputil")
+            .args(["/add-driver", &inf_clean, "/install"])
             .creation_flags(0x08000000)
             .output();
 

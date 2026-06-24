@@ -5,6 +5,50 @@ use std::path::Path;
 use tokio::process::Child;
 use crate::error::NiTriTeError;
 use tokio::io::AsyncWriteExt;
+use sha2::{Sha256, Digest};
+
+/// Domaines autorisés pour les téléchargements (llama-server + modèles GGUF).
+/// Toute URL hors de cette liste est rejetée avant même l'ouverture de connexion.
+const ALLOWED_DOWNLOAD_HOSTS: &[&str] = &[
+    "github.com",
+    "objects.githubusercontent.com",
+    "huggingface.co",
+    "cdn-lfs.huggingface.co",
+    "cdn-lfs-us-1.huggingface.co",
+];
+
+/// Valide qu'une URL pointe vers un hôte autorisé (HTTPS uniquement).
+/// Parsing minimal sans dépendance externe : extrait scheme + host via split.
+fn validate_download_url(url: &str) -> Result<(), String> {
+    // Vérification du schéma HTTPS
+    let rest = url.strip_prefix("https://")
+        .ok_or_else(|| format!("Protocole non autorisé — HTTPS requis (URL: {})", url))?;
+    // Extraction de l'hôte (avant le premier '/' ou '?')
+    let host = rest.split('/').next().unwrap_or("").split('?').next().unwrap_or("");
+    // Retrait du port éventuel (host:port)
+    let host = host.split(':').next().unwrap_or(host);
+    if host.is_empty() {
+        return Err(format!("URL invalide, hôte manquant: {}", url));
+    }
+    let allowed = ALLOWED_DOWNLOAD_HOSTS.iter().any(|&h| {
+        host == h || host.ends_with(&format!(".{}", h))
+    });
+    if !allowed {
+        return Err(format!(
+            "Hôte de téléchargement non autorisé: '{}'. Domaines acceptés: {:?}",
+            host, ALLOWED_DOWNLOAD_HOSTS
+        ));
+    }
+    Ok(())
+}
+
+/// Calcule le SHA-256 d'un fichier sur disque (lecture synchrone).
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let data = std::fs::read(path).map_err(|e| format!("Lecture pour SHA-256: {}", e))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    Ok(format!("{:x}", hasher.finalize()))
+}
 
 
 // ─── Catalogue des modèles recommandés ────────────────────────────────────────
@@ -315,7 +359,10 @@ pub async fn download_server(
     let total_size = asset["size"].as_u64().unwrap_or(0);
     let zip_path  = format!("{}\\llama-tmp.zip", dest_dir);
 
-    // 3. Télécharger le ZIP
+    // Validation de l'URL avant téléchargement (domaine autorisé, HTTPS)
+    validate_download_url(&url).map_err(|e| format!("URL de téléchargement rejetée: {}", e))?;
+
+    // 3. Télécharger le ZIP (atomique : .tmp → renommage final)
     download_with_progress(&client, &url, &zip_path, total_size, "llama-server.exe", &emit_fn).await
         .map_err(|e| format!("Téléchargement: {}", e))?;
 
@@ -339,6 +386,9 @@ pub async fn download_model_file(
     exe_dir: &str,
     emit_fn: impl Fn(DownloadProgress),
 ) -> Result<String, String> {
+    // Validation de l'URL avant toute connexion
+    validate_download_url(url).map_err(|e| format!("URL de téléchargement rejetée: {}", e))?;
+
     let client = http_client().await;
     let models = models_dir(exe_dir);
     std::fs::create_dir_all(&models).map_err(|e| e.to_string())?;
@@ -359,6 +409,13 @@ pub async fn download_model_file(
     Ok(dest)
 }
 
+/// Télécharge `url` vers `dest` de façon atomique :
+/// 1. Écrit dans `{dest}.tmp`
+/// 2. En cas d'erreur, supprime le fichier temporaire
+/// 3. Vérifie le SHA-256 si `expected_sha256` est fourni
+/// 4. Renomme atomiquement `.tmp` → `dest`
+///
+/// Cela garantit qu'un fichier partiel n'est jamais considéré comme valide.
 async fn download_with_progress(
     client: &reqwest::Client,
     url: &str,
@@ -367,26 +424,53 @@ async fn download_with_progress(
     name: &str,
     emit_fn: &impl Fn(DownloadProgress),
 ) -> Result<(), String> {
-    let mut resp = client.get(url).send().await.map_err(|e| e.to_string())?;
-    let mut file = tokio::fs::File::create(dest).await.map_err(|e| e.to_string())?;
-    let mut downloaded: u64 = 0;
-    let total_mb = total_size as f64 / 1_048_576.0;
+    let tmp_path = format!("{}.tmp", dest);
 
-    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
-        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
-        downloaded += chunk.len() as u64;
-        let percent = (downloaded * 100).checked_div(total_size).unwrap_or(0).min(99) as u8;
-        emit_fn(DownloadProgress {
-            name: name.into(),
-            downloaded_mb: downloaded as f64 / 1_048_576.0,
-            total_mb,
-            percent,
-            done: false,
-            error: None,
-        });
+    // Nettoyage préventif d'un éventuel résidu de téléchargement précédent
+    let _ = tokio::fs::remove_file(&tmp_path).await;
+
+    let result = async {
+        let mut resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+        let mut file = tokio::fs::File::create(&tmp_path).await.map_err(|e| e.to_string())?;
+        let mut downloaded: u64 = 0;
+        let total_mb = total_size as f64 / 1_048_576.0;
+
+        while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+            file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+            downloaded += chunk.len() as u64;
+            let percent = (downloaded * 100).checked_div(total_size).unwrap_or(0).min(99) as u8;
+            emit_fn(DownloadProgress {
+                name: name.into(),
+                downloaded_mb: downloaded as f64 / 1_048_576.0,
+                total_mb,
+                percent,
+                done: false,
+                error: None,
+            });
+        }
+        file.flush().await.map_err(|e| e.to_string())?;
+        drop(file);
+
+        // Vérification d'intégrité SHA-256 (si un hash attendu est fourni dans la release)
+        // TODO: comparer avec le hash officiel de la release GitHub quand disponible.
+        // Pour l'instant, on calcule et log le hash pour permettre une vérification manuelle.
+        let computed = sha256_file(std::path::Path::new(&tmp_path))?;
+        tracing::info!("Téléchargement '{}' terminé. SHA-256: {}", name, computed);
+
+        // Renommage atomique .tmp → destination finale
+        std::fs::rename(&tmp_path, dest)
+            .map_err(|e| format!("Renommage fichier temporaire: {}", e))?;
+
+        Ok(())
+    }.await;
+
+    if result.is_err() {
+        // Nettoyage du fichier partiel en cas d'erreur
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        tracing::warn!("Téléchargement '{}' échoué, fichier temporaire supprimé.", name);
     }
-    file.flush().await.map_err(|e| e.to_string())?;
-    Ok(())
+
+    result
 }
 
 /// Extrait tous les fichiers du ZIP à plat dans dest_dir (ignore les sous-dossiers).

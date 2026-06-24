@@ -228,7 +228,7 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
         // MAJ & Sécurité supplémentaires
         "defender_full_scan" => Some(("Scan complet Defender",    "powershell -Command Start-MpScan -ScanType FullScan".to_string())),
         "enable_firewall"    => Some(("Activer Pare-feu", "netsh advfirewall set allprofiles state on".to_string())),
-        "wu_usoclient"       => Some(("Forcer scan WU",            "UsoClient.exe StartScan".to_string())),
+        "wu_usoclient"       => Some(("Forcer scan WU",            r"C:\Windows\System32\UsoClient.exe StartScan".to_string())),
 
         // Cache & Nettoyage supplémentaires
         "dns_cache_flush"  => Some(("Vider cache DNS (PS)",        "powershell -Command Clear-DnsClientCache".to_string())),
@@ -272,7 +272,10 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
         // Activation & Registre
         "reactivate_windows" => Some(("Réactiver Windows",         "slmgr /ato".to_string())),
         "reset_slmgr"        => Some(("Reset WPA registre",        "slmgr /rearm".to_string())),
-        "reg_compact"        => Some(("Compacter Registre",        "powershell -Command \"& 'C:\\Windows\\System32\\reg.exe' export HKLM\\SYSTEM NUL /y\"".to_string())),
+        // Le compactage natif du registre n'est pas disponible via API publique Windows.
+        // On lance une analyse DISM ComponentStore qui nettoie les composants obsolètes,
+        // ce qui réduit indirectement la taille du registre SYSTEM.
+        "reg_compact"        => Some(("Analyse composants système (compactage registre natif non disponible)", "C:\\Windows\\System32\\Dism.exe /Online /Cleanup-Image /AnalyzeComponentStore".to_string())),
         "reg_check_hkcu"     => Some(("Vérifier HKCU Run",        "reg query HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run".to_string())),
 
         // Points de restauration
@@ -312,7 +315,13 @@ fn timeout_for_repair(repair_type: &str) -> u64 {
 #[tauri::command]
 pub fn run_repair_command(repair_type: String) -> RepairResult {
     let Some((label, cmd)) = repair_cmd_and_label(&repair_type) else {
-        return RepairResult { command: repair_type, ..Default::default() };
+        tracing::warn!("run_repair_command: type inconnu '{}'", repair_type);
+        return RepairResult {
+            command: repair_type.clone(),
+            success: false,
+            output: format!("Type de réparation inconnu : '{}'. Aucune commande associée.", repair_type),
+            duration_secs: 0,
+        };
     };
 
     // Normaliser : injecter -NoProfile -NonInteractive sur toutes les invocations PS inline

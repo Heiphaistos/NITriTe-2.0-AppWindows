@@ -222,7 +222,7 @@ async function loadApps() {
     const raw = await cachedInvoke<AppInfo[]>("get_apps");
     apps.value = raw.map(a => ({ ...a, category: mapCategory(a.category) }));
   } catch {
-    wingetOk.value = true;
+    wingetOk.value = false;
     apps.value = devApps;
   }
   loading.value = false;

@@ -3,6 +3,14 @@
  * Extrait de DiagnosticPage.vue pour réduire la taille du fichier orchestrateur.
  */
 import { ref, onUnmounted } from "vue";
+
+const escHtml = (s: any): string =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 import type { Ref } from "vue";
 import { invoke, invokeRaw } from "@/utils/invoke";
 import { exportScanHtml } from "@/composables/useScanExport";
@@ -431,60 +439,60 @@ export function useDiagnosticExport(state: DiagnosticState, navigateToScan: () =
     let h = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport NiTriTe — ${new Date().toLocaleDateString()}</title><style>${CSS}</style></head><body>`;
     h += `<div class="header"><h1>🖥 Rapport Diagnostic — NiTriTe</h1><p>Généré le ${new Date().toLocaleString()}</p></div>`;
     if (s.scanProblems.value.length)
-      h += `<div class="section"><h2>⚠ Problèmes Détectés (${s.scanProblems.value.length})</h2><ul style="list-style:none">${s.scanProblems.value.map(p => `<li style="padding:5px 0;border-bottom:1px solid #1e1e35;font-size:12px">${p}</li>`).join("")}</ul></div>`;
+      h += `<div class="section"><h2>⚠ Problèmes Détectés (${s.scanProblems.value.length})</h2><ul style="list-style:none">${s.scanProblems.value.map(p => `<li style="padding:5px 0;border-bottom:1px solid #1e1e35;font-size:12px">${escHtml(p)}</li>`).join("")}</ul></div>`;
     else if (sr)
       h += `<div class="section"><p style="color:#4ade80">✅ Aucun problème critique détecté</p></div>`;
     if (si) {
       h += `<div class="section"><h2>Système</h2>
-<div class="kv"><span class="k">OS</span><span class="v">${si.os.name} ${si.os.version} (${si.os.architecture})</span></div>
-<div class="kv"><span class="k">Hostname</span><span class="v">${si.os.hostname}</span></div>
-<div class="kv"><span class="k">Build</span><span class="v">${si.os.build_number}</span></div>
+<div class="kv"><span class="k">OS</span><span class="v">${escHtml(si.os.name)} ${escHtml(si.os.version)} (${escHtml(si.os.architecture)})</span></div>
+<div class="kv"><span class="k">Hostname</span><span class="v">${escHtml(si.os.hostname)}</span></div>
+<div class="kv"><span class="k">Build</span><span class="v">${escHtml(si.os.build_number)}</span></div>
 <h3>Processeur</h3>
-<div class="kv"><span class="k">Modèle</span><span class="v">${si.cpu.name}</span></div>
-<div class="kv"><span class="k">Cœurs / Threads</span><span class="v">${si.cpu.cores} / ${si.cpu.threads}</span></div>
+<div class="kv"><span class="k">Modèle</span><span class="v">${escHtml(si.cpu.name)}</span></div>
+<div class="kv"><span class="k">Cœurs / Threads</span><span class="v">${escHtml(si.cpu.cores)} / ${escHtml(si.cpu.threads)}</span></div>
 <div class="kv"><span class="k">Fréquence</span><span class="v">${(si.cpu.base_speed_mhz / 1000).toFixed(2)} GHz</span></div>
 <h3>RAM</h3>
 <div class="kv"><span class="k">Total</span><span class="v">${si.ram.total_gb.toFixed(1)} GB</span></div>
 <div class="kv"><span class="k">Utilisée</span><span class="v">${si.ram.used_gb.toFixed(1)} GB (${Math.round(si.ram.usage_percent)}%)</span></div></div>`;
     }
     if (s.ramData.value) {
-      h += `<div class="section"><h2>RAM — ${s.ramData.value.used_slots}/${s.ramData.value.total_slots} slots — ${s.ramData.value.total_capacity_gb.toFixed(0)} GB</h2><table><tr><th>Slot</th><th>Capacité</th><th>Type</th><th>Vitesse</th><th>Fabricant</th><th>P/N</th></tr>`;
+      h += `<div class="section"><h2>RAM — ${escHtml(s.ramData.value.used_slots)}/${escHtml(s.ramData.value.total_slots)} slots — ${s.ramData.value.total_capacity_gb.toFixed(0)} GB</h2><table><tr><th>Slot</th><th>Capacité</th><th>Type</th><th>Vitesse</th><th>Fabricant</th><th>P/N</th></tr>`;
       for (const sl of s.ramData.value.slots)
-        h += `<tr><td>${sl.device_locator}</td><td>${sl.capacity_gb.toFixed(0)} GB</td><td>${sl.memory_type}</td><td>${sl.speed_mhz} MHz</td><td>${sl.manufacturer}</td><td>${sl.part_number || "—"}</td></tr>`;
+        h += `<tr><td>${escHtml(sl.device_locator)}</td><td>${sl.capacity_gb.toFixed(0)} GB</td><td>${escHtml(sl.memory_type)}</td><td>${escHtml(sl.speed_mhz)} MHz</td><td>${escHtml(sl.manufacturer)}</td><td>${escHtml(sl.part_number || "—")}</td></tr>`;
       h += `</table></div>`;
     }
     if (s.gpuList.value.length) {
       h += `<div class="section"><h2>GPU (${s.gpuList.value.length})</h2><table><tr><th>Modèle</th><th>VRAM</th><th>Driver</th><th>Date driver</th><th>Résolution</th></tr>`;
       for (const g of s.gpuList.value)
-        h += `<tr><td>${g.name}</td><td>${g.adapter_ram_mb >= 1024 ? (g.adapter_ram_mb / 1024).toFixed(0) + "GB" : g.adapter_ram_mb + "MB"}</td><td>${g.driver_version}</td><td>${g.driver_date}</td><td>${g.current_resolution} @${g.current_refresh_rate}Hz</td></tr>`;
+        h += `<tr><td>${escHtml(g.name)}</td><td>${g.adapter_ram_mb >= 1024 ? (g.adapter_ram_mb / 1024).toFixed(0) + "GB" : g.adapter_ram_mb + "MB"}</td><td>${escHtml(g.driver_version)}</td><td>${escHtml(g.driver_date)}</td><td>${escHtml(g.current_resolution)} @${escHtml(g.current_refresh_rate)}Hz</td></tr>`;
       h += `</table></div>`;
     }
     if (s.storageList.value.length) {
       h += `<div class="section"><h2>Stockage Physique</h2><table><tr><th>Modèle</th><th>Taille</th><th>Interface</th><th>Type</th><th>Serial</th><th>Statut</th></tr>`;
       for (const d of s.storageList.value)
-        h += `<tr><td>${d.model}</td><td>${d.size_gb.toFixed(0)} GB</td><td>${d.interface_type}</td><td>${d.media_type}</td><td><code>${d.serial_number || "—"}</code></td><td>${d.status}</td></tr>`;
+        h += `<tr><td>${escHtml(d.model)}</td><td>${d.size_gb.toFixed(0)} GB</td><td>${escHtml(d.interface_type)}</td><td>${escHtml(d.media_type)}</td><td><code>${escHtml(d.serial_number || "—")}</code></td><td>${escHtml(d.status)}</td></tr>`;
       h += `</table></div>`;
     }
     if (s.networkAdapters.value.length) {
       h += `<div class="section"><h2>Réseau</h2><table><tr><th>Nom</th><th>MAC</th><th>IP</th><th>Vitesse</th><th>DNS</th></tr>`;
       for (const a of s.networkAdapters.value.slice(0, 10))
-        h += `<tr><td>${a.name}</td><td><code>${a.mac_address}</code></td><td>${a.ip_addresses.join(", ")}</td><td>${a.speed_mbps} Mbps</td><td>${a.dns_servers.slice(0, 2).join(", ")}</td></tr>`;
+        h += `<tr><td>${escHtml(a.name)}</td><td><code>${escHtml(a.mac_address)}</code></td><td>${a.ip_addresses.map(escHtml).join(", ")}</td><td>${escHtml(a.speed_mbps)} Mbps</td><td>${a.dns_servers.slice(0, 2).map(escHtml).join(", ")}</td></tr>`;
       h += `</table></div>`;
     }
     if (s.batteries.value.length) {
       h += `<div class="section"><h2>🔋 Batterie</h2><table><tr><th>Nom</th><th>Statut</th><th>Charge</th><th>Autonomie</th><th>Cap. originale</th><th>Cap. actuelle</th><th>Santé</th><th>Chimie</th><th>Cycles</th></tr>`;
       for (const b of s.batteries.value)
-        h += `<tr><td>${b.name}</td><td>${b.status}</td><td>${b.estimated_charge_remaining}%</td><td>${b.estimated_run_time}</td><td>${b.design_capacity} mWh</td><td>${b.full_charge_capacity} mWh</td><td>${b.battery_health_percent.toFixed(1)}%</td><td>${b.chemistry}</td><td>${b.cycle_count}</td></tr>`;
+        h += `<tr><td>${escHtml(b.name)}</td><td>${escHtml(b.status)}</td><td>${escHtml(b.estimated_charge_remaining)}%</td><td>${escHtml(b.estimated_run_time)}</td><td>${escHtml(b.design_capacity)} mWh</td><td>${escHtml(b.full_charge_capacity)} mWh</td><td>${b.battery_health_percent.toFixed(1)}%</td><td>${escHtml(b.chemistry)}</td><td>${escHtml(b.cycle_count)}</td></tr>`;
       h += `</table></div>`;
     }
     if (s.licenseInfo.value) {
       const l = s.licenseInfo.value;
       h += `<div class="section"><h2>Licences</h2>
-<div class="kv"><span class="k">Produit Windows</span><span class="v">${l.product_name}</span></div>
-<div class="kv"><span class="k">Statut</span><span class="v"><span class="${l.activation_status === "Activé" ? "ok" : "danger"}">${l.activation_status}</span></span></div>
-<div class="kv"><span class="k">Clé Windows</span><span class="v"><code style="color:#fb923c">${l.full_product_key || "Non disponible via OEM/UEFI"}</code></span></div>
-<div class="kv"><span class="k">Clé partielle</span><span class="v"><code>XXXXX-XXXXX-XXXXX-XXXXX-${l.partial_product_key}</code></span></div>
-${l.office_name ? `<div class="kv"><span class="k">${l.office_name} — Clé</span><span class="v"><code style="color:#fb923c">${l.office_full_key || l.office_key || "Non disponible"}</code></span></div>` : ""}
+<div class="kv"><span class="k">Produit Windows</span><span class="v">${escHtml(l.product_name)}</span></div>
+<div class="kv"><span class="k">Statut</span><span class="v"><span class="${l.activation_status === "Activé" ? "ok" : "danger"}">${escHtml(l.activation_status)}</span></span></div>
+<div class="kv"><span class="k">Clé Windows</span><span class="v"><code style="color:#fb923c">${escHtml(l.full_product_key || "Non disponible via OEM/UEFI")}</code></span></div>
+<div class="kv"><span class="k">Clé partielle</span><span class="v"><code>XXXXX-XXXXX-XXXXX-XXXXX-${escHtml(l.partial_product_key)}</code></span></div>
+${l.office_name ? `<div class="kv"><span class="k">${escHtml(l.office_name)} — Clé</span><span class="v"><code style="color:#fb923c">${escHtml(l.office_full_key || l.office_key || "Non disponible")}</code></span></div>` : ""}
 </div>`;
     }
     if (sr) {
@@ -510,13 +518,13 @@ ${l.office_name ? `<div class="kv"><span class="k">${l.office_name} — Clé</sp
       const sorted = [...s.softwareList.value].sort((a, b) => (b.install_date || "").localeCompare(a.install_date || "")).slice(0, 50);
       h += `<div class="section"><h2>Logiciels (${s.softwareList.value.length} total — 50 récents)</h2><table><tr><th>Nom</th><th>Version</th><th>Éditeur</th><th>Date</th></tr>`;
       for (const sw of sorted)
-        h += `<tr><td>${sw.name}</td><td>${sw.version || "—"}</td><td>${sw.publisher || "—"}</td><td>${sw.install_date || "—"}</td></tr>`;
+        h += `<tr><td>${escHtml(sw.name)}</td><td>${escHtml(sw.version || "—")}</td><td>${escHtml(sw.publisher || "—")}</td><td>${escHtml(sw.install_date || "—")}</td></tr>`;
       h += `</table></div>`;
     }
     if (s.updatesHistory.value.length) {
       h += `<div class="section"><h2>Mises à jour (${s.updatesHistory.value.length})</h2><table><tr><th>KB</th><th>Description</th><th>Installé le</th></tr>`;
       for (const u of s.updatesHistory.value.slice(0, 30))
-        h += `<tr><td><code>${u.hotfix_id}</code></td><td>${u.description || "—"}</td><td>${u.installed_on || "—"}</td></tr>`;
+        h += `<tr><td><code>${escHtml(u.hotfix_id)}</code></td><td>${escHtml(u.description || "—")}</td><td>${escHtml(u.installed_on || "—")}</td></tr>`;
       h += `</table></div>`;
     }
     h += `<div style="text-align:center;margin-top:20px;color:#475569;font-size:11px">Rapport généré par NiTriTe — ${new Date().toLocaleString()}</div></body></html>`;

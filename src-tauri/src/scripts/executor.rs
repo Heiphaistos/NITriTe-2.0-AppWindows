@@ -25,6 +25,13 @@ pub struct ScriptEntry {
     pub script_type: String, // "cmd" | "powershell"
     pub content: String,
     pub requires_admin: bool,
+    /// Scripts nécessitant une saisie interactive (Read-Host).
+    /// Pour ces scripts, -NonInteractive est retiré afin d'éviter une exception PowerShell.
+    #[serde(default)]
+    pub requires_interactive: bool,
+    /// Scripts builtin embarqués — exemptés de la validation dynamique.
+    #[serde(default)]
+    pub is_builtin: bool,
 }
 
 pub fn execute_script(
@@ -32,20 +39,59 @@ pub fn execute_script(
     script_type: &str,
     window: &tauri::Window,
 ) -> Result<ScriptResult, NiTriTeError> {
-    // Bloquer les scripts classifiés danger avant toute exécution
-    let validation = validate_script(content.to_string(), script_type.to_string());
-    if validation.risk_level == "danger" {
-        let reasons = validation.warnings.join(", ");
-        tracing::warn!("execute_script BLOQUÉ (danger): {}", reasons);
-        return Err(NiTriTeError::CommandDenied(
-            format!("Script bloqué (risque critique): {}", reasons),
-        ));
+    execute_script_inner(content, script_type, false, false, window)
+}
+
+pub fn execute_script_entry(
+    entry: &ScriptEntry,
+    window: &tauri::Window,
+) -> Result<ScriptResult, NiTriTeError> {
+    execute_script_inner(
+        &entry.content,
+        &entry.script_type,
+        entry.is_builtin,
+        entry.requires_interactive,
+        window,
+    )
+}
+
+/// Variante publique avec flags explicites — utilisée par la commande Tauri
+/// pour transmettre is_builtin et requires_interactive depuis le frontend.
+pub fn execute_script_with_flags(
+    content: &str,
+    script_type: &str,
+    is_builtin: bool,
+    requires_interactive: bool,
+    window: &tauri::Window,
+) -> Result<ScriptResult, NiTriTeError> {
+    execute_script_inner(content, script_type, is_builtin, requires_interactive, window)
+}
+
+fn execute_script_inner(
+    content: &str,
+    script_type: &str,
+    is_builtin: bool,
+    requires_interactive: bool,
+    window: &tauri::Window,
+) -> Result<ScriptResult, NiTriTeError> {
+    // Validation uniquement pour les scripts utilisateur (non builtin)
+    if !is_builtin {
+        let validation = validate_script(content.to_string(), script_type.to_string());
+        if validation.risk_level == "danger" {
+            let reasons = validation.warnings.join(", ");
+            tracing::warn!("execute_script BLOQUÉ (danger): {}", reasons);
+            return Err(NiTriTeError::CommandDenied(
+                format!("Script bloqué (risque critique): {}", reasons),
+            ));
+        }
     }
 
     // Log de chaque exécution pour traçabilité
     tracing::info!(
-        "execute_script: type={} length={} preview={:?}",
+        "execute_script: type={} builtin={} interactive={} length={} preview={:?}",
         script_type,
+        is_builtin,
+        requires_interactive,
         content.len(),
         content.chars().take(120).collect::<String>()
     );
@@ -53,7 +99,13 @@ pub fn execute_script(
     // Timeout : 5 min pour les scripts builtin, peut être étendu si nécessaire
     const SCRIPT_TIMEOUT_SECS: u64 = 300;
 
+    // Pour les scripts interactifs (Read-Host), on retire -NonInteractive/-NoProfile
+    // afin d'éviter l'exception "PowerShell is in NonInteractive mode".
     let (cmd, args) = match script_type {
+        "powershell" if requires_interactive => ("powershell", vec![
+            "-ExecutionPolicy", "RemoteSigned",
+            "-Command", content,
+        ]),
         "powershell" => ("powershell", vec![
             "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
             "-Command", content,
@@ -539,17 +591,17 @@ Write-Host "Produit  : $($wnt.ProductId)""#, false),
             "Get-LocalUser | Format-Table Name, Enabled, LastLogon, PasswordRequired, PasswordExpires -AutoSize", false),
         script("Lister groupes locaux", "Affiche les groupes locaux et leurs membres", "Utilisateurs", "powershell",
             "Get-LocalGroup | ForEach-Object { Write-Host \"--- $($_.Name) ---\"; Get-LocalGroupMember $_.Name -ErrorAction SilentlyContinue | Select-Object Name, ObjectClass | Format-Table }", false),
-        script("Creer compte utilisateur standard", "Cree un compte utilisateur interactif", "Utilisateurs", "powershell",
+        script_interactive("Creer compte utilisateur standard", "Cree un compte utilisateur interactif", "Utilisateurs",
             r#"$name = Read-Host 'Nom du compte'
 $pass = Read-Host 'Mot de passe' -AsSecureString
 New-LocalUser -Name $name -Password $pass -FullName $name -Description 'Cree par Nitrite'
 Add-LocalGroupMember -Group 'Utilisateurs' -Member $name
 Write-Host "Compte cree: $name""#, true),
-        script("Desactiver compte utilisateur", "Desactive un compte utilisateur specifique", "Utilisateurs", "powershell",
+        script_interactive("Desactiver compte utilisateur", "Desactive un compte utilisateur specifique", "Utilisateurs",
             r#"$name = Read-Host 'Nom du compte a desactiver'
 Disable-LocalUser -Name $name
 Write-Host "Compte desactive: $name""#, true),
-        script("Forcer changement de mot de passe", "Force le changement de mot de passe a la prochaine connexion", "Utilisateurs", "powershell",
+        script_interactive("Forcer changement de mot de passe", "Force le changement de mot de passe a la prochaine connexion", "Utilisateurs",
             r#"$name = Read-Host 'Nom du compte'
 net user $name /logonpasswordchg:yes
 Write-Host "Changement de MDP force pour: $name""#, true),
@@ -573,7 +625,7 @@ Write-Host "Sauvegarde: $dest""#, false),
             "Get-ComputerRestorePoint | Select-Object CreationTime, Description, SequenceNumber | Sort-Object CreationTime -Descending | Format-Table -AutoSize", false),
         script("Exporter profil WiFi", "Sauvegarde tous les profils WiFi sur le bureau", "Sauvegardes", "cmd",
             "netsh wlan export profile folder=%USERPROFILE%\\Desktop\\WiFi_Profiles key=clear & echo Profils exportes dans %USERPROFILE%\\Desktop\\WiFi_Profiles", true),
-        script("Importer profils WiFi", "Importe les profils WiFi depuis un dossier", "Sauvegardes", "powershell",
+        script_interactive("Importer profils WiFi", "Importe les profils WiFi depuis un dossier", "Sauvegardes",
             r#"$src = Read-Host 'Dossier contenant les profils XML'
 Get-ChildItem "$src\*.xml" | ForEach-Object {
   netsh wlan add profile filename=$_.FullName
@@ -598,8 +650,18 @@ pub fn list_script_files(dir: &str) -> Result<Vec<ScriptFileInfo>, NiTriTeError>
         return Ok(Vec::new());
     }
 
+    // SECURITE : canonicalize avant whitelist pour prévenir path traversal / symlink
+    let canonical = path.canonicalize().map_err(|e| {
+        NiTriTeError::CommandDenied(format!("Chemin invalide: {}", e))
+    })?;
+    if !is_script_path_allowed(&canonical) {
+        return Err(NiTriTeError::CommandDenied(
+            format!("Accès interdit hors des répertoires autorisés: {}", dir),
+        ));
+    }
+
     let mut files = Vec::new();
-    for entry in std::fs::read_dir(path)? {
+    for entry in std::fs::read_dir(&canonical)? {
         let entry = entry?;
         let ep = entry.path();
         if ep.is_file() {
@@ -638,19 +700,23 @@ fn is_script_path_allowed(p: &std::path::Path) -> bool {
 
 pub fn read_script_file(path: &str) -> Result<String, NiTriTeError> {
     let p = std::path::Path::new(path);
-    if !is_script_path_allowed(p) {
+    if !p.exists() {
+        return Err(NiTriTeError::System(format!("Fichier introuvable: {}", path)));
+    }
+    // SECURITE : canonicalize AVANT le check whitelist pour prévenir TOCTOU / symlink
+    let canonical = p.canonicalize().map_err(|e| {
+        NiTriTeError::CommandDenied(format!("Chemin non résolvable: {}", e))
+    })?;
+    if !is_script_path_allowed(&canonical) {
         return Err(NiTriTeError::CommandDenied(
             format!("Lecture interdite hors des répertoires autorisés: {}", path),
         ));
     }
-    if !p.exists() {
-        return Err(NiTriTeError::System(format!("Fichier introuvable: {}", path)));
-    }
-    let meta = std::fs::metadata(p)?;
+    let meta = std::fs::metadata(&canonical)?;
     if meta.len() > 100_000 {
         return Err(NiTriTeError::System("Fichier trop volumineux (max 100KB)".into()));
     }
-    Ok(std::fs::read_to_string(p)?)
+    Ok(std::fs::read_to_string(&canonical)?)
 }
 
 pub fn save_script_file(path: &str, content: &str) -> Result<(), NiTriTeError> {
@@ -659,12 +725,32 @@ pub fn save_script_file(path: &str, content: &str) -> Result<(), NiTriTeError> {
     if !["ps1", "bat", "cmd", "sh", "py"].contains(&ext) {
         return Err(NiTriTeError::System(format!("Extension non autorisee: .{}", ext)));
     }
-    if !is_script_path_allowed(p) {
+
+    // SECURITE TOCTOU : le fichier peut ne pas encore exister (création).
+    // On canonicalize le répertoire parent, puis on recompose le chemin final.
+    let canonical = if p.exists() {
+        p.canonicalize().map_err(|e| {
+            NiTriTeError::CommandDenied(format!("Chemin non résolvable: {}", e))
+        })?
+    } else {
+        let parent = p.parent().ok_or_else(|| {
+            NiTriTeError::System("Chemin sans répertoire parent".into())
+        })?;
+        let canonical_parent = parent.canonicalize().map_err(|e| {
+            NiTriTeError::CommandDenied(format!("Répertoire parent non résolvable: {}", e))
+        })?;
+        let file_name = p.file_name().ok_or_else(|| {
+            NiTriTeError::System("Nom de fichier manquant".into())
+        })?;
+        canonical_parent.join(file_name)
+    };
+
+    if !is_script_path_allowed(&canonical) {
         return Err(NiTriTeError::CommandDenied(
             format!("Écriture interdite hors des répertoires autorisés: {}", path),
         ));
     }
-    std::fs::write(p, content)?;
+    std::fs::write(&canonical, content)?;
     Ok(())
 }
 
@@ -676,5 +762,21 @@ fn script(name: &str, desc: &str, cat: &str, stype: &str, content: &str, admin: 
         script_type: stype.to_string(),
         content: content.to_string(),
         requires_admin: admin,
+        requires_interactive: false,
+        is_builtin: true,
+    }
+}
+
+/// Script builtin nécessitant Read-Host (interactive) — PowerShell sans -NonInteractive
+fn script_interactive(name: &str, desc: &str, cat: &str, content: &str, admin: bool) -> ScriptEntry {
+    ScriptEntry {
+        name: name.to_string(),
+        description: desc.to_string(),
+        category: cat.to_string(),
+        script_type: "powershell".to_string(),
+        content: content.to_string(),
+        requires_admin: admin,
+        requires_interactive: true,
+        is_builtin: true,
     }
 }

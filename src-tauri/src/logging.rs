@@ -88,7 +88,8 @@ fn rotate_if_needed() {
 // ── Écriture d'une entrée ─────────────────────────────────────────────────────
 
 fn write_entry(entry: &LogEntry) -> std::io::Result<()> {
-    let _guard = LOG_MUTEX.lock();
+    // Récupère le lock même si un thread précédent a paniqué (mutex poisonné)
+    let _guard = LOG_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     rotate_if_needed();
     let mut file = OpenOptions::new()
         .create(true)

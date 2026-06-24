@@ -57,12 +57,9 @@ function handleFileImport(e: Event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    try {
-      store.importTheme(ev.target?.result as string);
-      notify.success("Importé", "Thème chargé avec succès.");
-    } catch {
-      notify.error("Erreur", "Fichier JSON invalide.");
-    }
+    const result = store.importTheme(ev.target?.result as string);
+    if (result.ok) notify.success("Importé", "Thème chargé avec succès.");
+    else notify.error("Erreur import thème", result.error ?? "Fichier invalide");
   };
   reader.readAsText(file);
   (e.target as HTMLInputElement).value = "";

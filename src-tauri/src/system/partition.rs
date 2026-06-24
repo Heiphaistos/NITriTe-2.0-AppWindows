@@ -184,6 +184,32 @@ pub fn format_partition(letter: String, fs: String, label: String) -> Result<Str
     }
     // Limiter le label à 32 caractères (limite NTFS)
     let label = if label.len() > 32 { label[..32].to_string() } else { label };
+
+    // Vérification WMI : refuser les partitions système, boot, EFI ou Recovery
+    // avant tout formatage destructif.
+    let check_ps = format!(
+        r#"try {{
+  $p = Get-Partition -DriveLetter '{letter}' -ErrorAction Stop
+  if ($p.IsSystem -or $p.IsBoot) {{ Write-Output 'SYSTEM'; exit }}
+  $vol = $p | Get-Volume -ErrorAction SilentlyContinue
+  if ($vol) {{
+    $t = [string]$p.Type
+    if ($t -eq 'System' -or $t -eq 'Recovery' -or $vol.FileSystem -eq 'FAT32' -and $vol.Size -lt 1GB -and $p.IsActive) {{
+      Write-Output 'SYSTEM'; exit
+    }}
+  }}
+  Write-Output 'OK'
+}} catch {{ Write-Output 'OK' }}"#,
+        letter = clean
+    );
+    let guard = run_ps_cmd(&check_ps).unwrap_or_else(|_| "OK".to_string());
+    if guard.trim() == "SYSTEM" {
+        return Err(format!(
+            "Formatage interdit : le lecteur {}:\\ est une partition système, boot, EFI ou Recovery.",
+            clean
+        ));
+    }
+
     let ps = format!(
         r#"Format-Volume -DriveLetter '{}' -FileSystem '{}' -NewFileSystemLabel '{}' -Confirm:$false -Force | Out-Null; 'OK'"#,
         clean,
@@ -318,8 +344,25 @@ pub fn restore_mbr(disk_index: u32, mbr_path: String) -> Result<String, String> 
         let mbr_data = std::fs::read(&mbr_path)
             .map_err(|e| format!("Lecture fichier MBR: {}", e))?;
 
-        if mbr_data.len() < 512 {
-            return Err(format!("Fichier MBR invalide ({} octets, 512 requis).", mbr_data.len()));
+        // Validation taille : 512 octets exactement (secteur MBR complet)
+        // ou 446 octets (code MBR seul, sans table de partitions ni signature)
+        if mbr_data.len() != 512 && mbr_data.len() != 446 {
+            return Err(format!(
+                "Fichier MBR invalide ({} octets, 512 ou 446 attendus).",
+                mbr_data.len()
+            ));
+        }
+
+        // Validation signature MBR : bytes 510-511 doivent être 0x55 0xAA
+        // (uniquement vérifiable si le fichier fait 512 octets)
+        if mbr_data.len() == 512 {
+            let sig = u16::from_le_bytes([mbr_data[510], mbr_data[511]]);
+            if sig != 0xAA55 {
+                return Err(format!(
+                    "Fichier MBR invalide : signature boot absente (attendu 0x55AA, trouvé 0x{:04X}).",
+                    sig
+                ));
+            }
         }
 
         let disk_path = format!(r"\\.\PhysicalDrive{}", disk_index);

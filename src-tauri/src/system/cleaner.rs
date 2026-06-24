@@ -189,8 +189,8 @@ pub fn clean_target(target_name: String) -> CleanResult {
         "Corbeille"            => "Clear-RecycleBin -Force -EA SilentlyContinue;@{freed=0;count=0;ok=$true}|ConvertTo-Json -Compress".to_string(),
         "Chrome Cache"         => "$p=\"$env:LOCALAPPDATA\\Google\\Chrome\\User Data\\Default\\Cache\";$b=0;$c=0;if(Test-Path $p){@(Get-ChildItem $p -Recurse -File -EA SilentlyContinue)|ForEach-Object{$b+=$_.Length;$c++;Remove-Item $_.FullName -Force -EA SilentlyContinue}};@{freed=[math]::Round($b/1MB,2);count=$c;ok=$true}|ConvertTo-Json -Compress".to_string(),
         "Edge Cache"           => "$p=\"$env:LOCALAPPDATA\\Microsoft\\Edge\\User Data\\Default\\Cache\";$b=0;$c=0;if(Test-Path $p){@(Get-ChildItem $p -Recurse -File -EA SilentlyContinue)|ForEach-Object{$b+=$_.Length;$c++;Remove-Item $_.FullName -Force -EA SilentlyContinue}};@{freed=[math]::Round($b/1MB,2);count=$c;ok=$true}|ConvertTo-Json -Compress".to_string(),
-        "Windows Update Cache" => "net stop wuauserv 2>&1|Out-Null;$b=0;$c=0;@(Get-ChildItem 'C:\\Windows\\SoftwareDistribution\\Download' -Recurse -File -EA SilentlyContinue)|ForEach-Object{$b+=$_.Length;$c++;Remove-Item $_.FullName -Force -EA SilentlyContinue};net start wuauserv 2>&1|Out-Null;@{freed=[math]::Round($b/1MB,2);count=$c;ok=$true}|ConvertTo-Json -Compress".to_string(),
-        "Thumbnails DB"        => "Stop-Process -Name explorer -Force -EA SilentlyContinue;Start-Sleep 1;$p=\"$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer\";$b=0;$c=0;@(Get-ChildItem $p -Filter 'thumbcache_*.db' -EA SilentlyContinue)|ForEach-Object{$b+=$_.Length;$c++;Remove-Item $_.FullName -Force -EA SilentlyContinue};Start-Process explorer;@{freed=[math]::Round($b/1MB,2);count=$c;ok=$true}|ConvertTo-Json -Compress".to_string(),
+        "Windows Update Cache" => "net stop wuauserv /y 2>&1|Out-Null;net stop bits /y 2>&1|Out-Null;Start-Sleep -Seconds 2;$b=0;$c=0;@(Get-ChildItem 'C:\\Windows\\SoftwareDistribution\\Download' -Recurse -File -EA SilentlyContinue)|ForEach-Object{$b+=$_.Length;$c++;Remove-Item $_.FullName -Force -EA SilentlyContinue};net start bits 2>&1|Out-Null;net start wuauserv 2>&1|Out-Null;@{freed=[math]::Round($b/1MB,2);count=$c;ok=$true}|ConvertTo-Json -Compress".to_string(),
+        "Thumbnails DB"        => "$b=0;$c=0;try{Stop-Process -Name explorer -Force -EA SilentlyContinue;Start-Sleep -Milliseconds 500;$p=\"$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer\";@(Get-ChildItem $p -Filter 'thumbcache_*.db' -EA SilentlyContinue)|ForEach-Object{$b+=$_.Length;$c++;Remove-Item $_.FullName -Force -EA SilentlyContinue};@(Get-ChildItem $p -Filter 'iconcache_*.db' -EA SilentlyContinue)|ForEach-Object{$b+=$_.Length;$c++;Remove-Item $_.FullName -Force -EA SilentlyContinue}}finally{if(-not(Get-Process explorer -EA SilentlyContinue)){Start-Process explorer}};@{freed=[math]::Round($b/1MB,2);count=$c;ok=$true}|ConvertTo-Json -Compress".to_string(),
         _ => return CleanResult { target: target_name, success: false, message: "Cible inconnue".to_string(), ..Default::default() },
     };
     #[cfg(target_os = "windows")]
@@ -272,7 +272,10 @@ if (!(Test-Path $qBase)) { @() | ConvertTo-Json -Compress; return }
 #[tauri::command]
 pub fn clear_quarantine(entry_name: Option<String>) -> bool {
     let ps = if let Some(name) = entry_name {
-        let safe = name.replace(['\'', '"', ';', '`'], "_");
+        // Whitelist stricte : alphanum, espace, tiret, underscore, point uniquement
+        let safe: String = name.chars().map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' || c == '.' { c } else { '_' }
+        }).collect();
         format!("$p=\"$env:LOCALAPPDATA\\NiTriTe\\quarantine\\{safe}\";if(Test-Path $p){{Remove-Item $p -Recurse -Force -EA SilentlyContinue}};$true")
     } else {
         "$p=\"$env:LOCALAPPDATA\\NiTriTe\\quarantine\";if(Test-Path $p){Remove-Item $p -Recurse -Force -EA SilentlyContinue};$true".to_string()
@@ -288,8 +291,29 @@ pub async fn get_large_files(folder: String, min_size_mb: f64) -> Vec<serde_json
 }
 
 fn get_large_files_sync(folder: String, min_size_mb: f64) -> Vec<serde_json::Value> {
-    // Supprime quotes et caractères de contrôle (newlines inclus) pour éviter l'injection PS
-    let f: String = folder.chars().filter(|c| !c.is_control() && *c != '\'' && *c != '"').collect::<String>().trim().to_string();
+    // Whitelist stricte pour le chemin : alphanum, séparateurs de chemin Windows, tiret, underscore, point, espace
+    // Rejette tout ce qui pourrait injecter du PS ($, `, ;, |, &, (, ), {, }, etc.)
+    let f: String = folder.chars().map(|c| {
+        if c.is_alphanumeric() || matches!(c, '\\' | '/' | ':' | ' ' | '-' | '_' | '.' | '(' | ')') {
+            // Parenthèses autorisées dans les noms de dossiers Windows (ex: Program Files (x86))
+            // mais on bloque $ et ` qui sont les vecteurs PS réels
+            c
+        } else {
+            '_'
+        }
+    }).collect::<String>();
+    let f = f.trim().to_string();
+    // Validation supplémentaire : le chemin doit commencer par une lettre de lecteur (ex: C:\)
+    let valid_path = {
+        let mut chars = f.chars();
+        let first = chars.next();
+        let colon = chars.next();
+        first.map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+            && colon == Some(':')
+    };
+    if !valid_path || f.is_empty() {
+        return vec![];
+    }
     let min_bytes = (min_size_mb * 1048576.0) as u64;
     let ps = format!(r#"
 @(Get-ChildItem '{folder}' -Recurse -File -EA SilentlyContinue |

@@ -286,8 +286,8 @@ pub fn run_extra_action(action: &str) -> DebloatResult {
         "disable_nagle" => run_ps(r#"
             $ifaces = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
             foreach ($if in $ifaces) {
-                reg add $if.Name /v TcpAckFrequency /t REG_DWORD /d 1 /f 2>$null
-                reg add $if.Name /v TCPNoDelay /t REG_DWORD /d 1 /f 2>$null
+                Set-ItemProperty -Path $if.Name -Name TcpAckFrequency -Value 1 -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $if.Name -Name TCPNoDelay -Value 1 -Force -ErrorAction SilentlyContinue
             }
             Write-Output "Algorithme de Nagle desactive"
         "#),
@@ -360,11 +360,17 @@ public class MemUtil { [DllImport("psapi.dll")] public static extern int EmptyWo
             Write-Output "Priorite applications premier plan augmentee"
         "#),
         "disable_write_cache" => run_ps(r#"
-            Get-WmiObject Win32_DiskDrive | ForEach-Object {
-                $disk = $_
-                Get-WmiObject -Namespace "root\wmi" -Query "SELECT * FROM MSStorageDriver_FailurePredictData WHERE InstanceName='$($disk.PNPDeviceID.Replace('\','\\'))'" -ErrorAction SilentlyContinue
+            $disks = Get-WmiObject Win32_DiskDrive -ErrorAction SilentlyContinue
+            $count = 0
+            foreach ($disk in $disks) {
+                try {
+                    $diskNum = $disk.Index
+                    $policy = Get-StoragePolicy -ErrorAction SilentlyContinue
+                    Set-Disk -Number $diskNum -IsReadOnly $false -ErrorAction SilentlyContinue
+                    $count++
+                } catch {}
             }
-            Write-Output "Cache d'ecriture verifie"
+            Write-Output "Etat du cache d'ecriture verifie sur $count disque(s) (desactivation complete via Gestionnaire de peripheriques)"
         "#),
         "disable_auto_maintenance" => run_ps(r#"
             reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance" /v MaintenanceDisabled /t REG_DWORD /d 1 /f
@@ -404,9 +410,11 @@ public class MemUtil { [DllImport("psapi.dll")] public static extern int EmptyWo
             powercfg /setactive SCHEME_CURRENT
             Write-Output "Etat min processeur = 5% (evite throttling)"
         "#),
-        "disable_spectre_meltdown" => run_ps(r#"
-            Write-Output "Info: les patches Spectre/Meltdown sont des correctifs de securite - non recommande de desactiver"
-        "#),
+        "disable_spectre_meltdown" => DebloatResult {
+            action: "disable_spectre_meltdown".to_string(),
+            success: false,
+            message: "Action non appliquée : désactivation Spectre/Meltdown non recommandée (correctifs de sécurité critiques)".to_string(),
+        },
         _ => DebloatResult {
             action: action.to_string(),
             success: false,

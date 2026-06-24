@@ -77,9 +77,18 @@ pub fn add_hosts_entry(ip: String, hostname: String, comment: String) -> Result<
     fn clean(s: &str) -> String {
         s.chars().filter(|c| !c.is_control() && *c != '\'' && *c != '"').collect::<String>().trim().to_string()
     }
+    // Whitelist stricte pour le commentaire : alphanumériques, espaces, tirets, underscores, points
+    // Évite l'injection PowerShell via caractères spéciaux (;, |, $, `, &, (, ))
+    fn clean_comment(s: &str) -> String {
+        s.chars()
+            .filter(|c| c.is_alphanumeric() || " -_.".contains(*c))
+            .collect::<String>()
+            .trim()
+            .to_string()
+    }
     let ip_c = clean(&ip);
     let host_c = clean(&hostname);
-    let comment_c = clean(&comment);
+    let comment_c = clean_comment(&comment);
 
     if ip_c.is_empty() || host_c.is_empty() {
         return Err("IP et hostname requis".to_string());

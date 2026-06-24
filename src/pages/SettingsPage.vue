@@ -87,10 +87,22 @@ onMounted(async () => {
   await aiStore.loadFromConfig();
   try {
     const cfg = await invoke<any>("get_config");
-    monitorInterval.value  = cfg.monitor_interval_ms ?? 2000;
-    processCount.value     = cfg.process_count       ?? 10;
-    sidebarDefault.value   = cfg.sidebar_collapsed   ?? false;
-    exportFormat.value     = cfg.export_format       ?? "json";
+    monitorInterval.value      = cfg.monitor_interval_ms    ?? 2000;
+    processCount.value         = cfg.process_count          ?? 10;
+    sidebarDefault.value       = cfg.sidebar_collapsed      ?? false;
+    exportFormat.value         = cfg.export_format          ?? "json";
+    autoSave.value             = cfg.auto_save              ?? false;
+    diskCacheEnabled.value     = cfg.disk_cache_enabled     ?? true;
+    gpuAcceleration.value      = cfg.gpu_acceleration       ?? true;
+    backgroundTasks.value      = cfg.background_tasks       ?? true;
+    maxHistoryEntries.value    = cfg.max_history_entries    ?? 100;
+    autoRefreshDashboard.value = cfg.auto_refresh_dashboard ?? true;
+    dashboardRefreshMs.value   = cfg.dashboard_refresh_ms  ?? 3000;
+    notifSounds.value          = cfg.notif_sounds           ?? false;
+    notifDesktop.value         = cfg.notif_desktop          ?? true;
+    notifErrors.value          = cfg.notif_errors           ?? true;
+    notifSuccess.value         = cfg.notif_success          ?? true;
+    if (cfg.notif_position) notifPosition.value = cfg.notif_position;
     if (cfg.font_size) appStore.setFontSize(cfg.font_size);
     if (cfg.show_animations === false) {
       appStore.showAnimations = false;
@@ -163,19 +175,31 @@ async function saveSettings() {
   try {
     await invoke("save_config", {
       config: {
-        theme:                appStore.theme,
-        language:             appStore.language,
-        sidebar_collapsed:    sidebarDefault.value,
-        ollama_url:           aiStore.ollamaUrl,
-        ollama_model:         aiStore.ollamaModel,
-        ollama_temperature:   aiStore.temperature,
-        monitor_interval_ms:  monitorInterval.value,
-        show_animations:      appStore.showAnimations,
-        compact_mode:         false,
-        notifications_enabled: true,
-        process_count:        processCount.value,
-        font_size:            appStore.fontSize,
-        export_format:        exportFormat.value,
+        theme:                   appStore.theme,
+        language:                appStore.language,
+        sidebar_collapsed:       sidebarDefault.value,
+        ollama_url:              aiStore.ollamaUrl,
+        ollama_model:            aiStore.ollamaModel,
+        ollama_temperature:      aiStore.temperature,
+        monitor_interval_ms:     monitorInterval.value,
+        show_animations:         appStore.showAnimations,
+        compact_mode:            false,
+        notifications_enabled:   true,
+        process_count:           processCount.value,
+        font_size:               appStore.fontSize,
+        export_format:           exportFormat.value,
+        auto_save:               autoSave.value,
+        disk_cache_enabled:      diskCacheEnabled.value,
+        gpu_acceleration:        gpuAcceleration.value,
+        background_tasks:        backgroundTasks.value,
+        max_history_entries:     maxHistoryEntries.value,
+        auto_refresh_dashboard:  autoRefreshDashboard.value,
+        dashboard_refresh_ms:    dashboardRefreshMs.value,
+        notif_sounds:            notifSounds.value,
+        notif_desktop:           notifDesktop.value,
+        notif_errors:            notifErrors.value,
+        notif_success:           notifSuccess.value,
+        notif_position:          notifPosition.value,
       },
     });
     notify.success("Paramètres sauvegardés");

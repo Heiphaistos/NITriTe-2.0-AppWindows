@@ -376,7 +376,7 @@ pub fn apply_turbo_mode(mode: String) -> Result<TurboResult, String> {
     match mode.as_str() {
         "gaming" => {
             if run("powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>&1").is_ok() { done.push("Plan d'alimentation : Haute performance".into()); } else { errors.push("Plan d'alimentation non changé".into()); }
-            if run("Get-AppxPackage Microsoft.XboxGamingOverlay | Remove-AppxPackage -ErrorAction SilentlyContinue; 'ok'").is_ok() { done.push("Xbox Game Bar désactivé".into()); }
+            if run("try { Get-AppxPackage Microsoft.XboxGamingOverlay | Disable-AppxPackage -ErrorAction SilentlyContinue } catch { Set-Service -Name 'GameBarPresenceWriter' -StartupType Disabled -ErrorAction SilentlyContinue }; Set-Service -Name 'GameBarPresenceWriter' -StartupType Disabled -ErrorAction SilentlyContinue; 'ok'").is_ok() { done.push("Xbox Game Bar désactivé (réversible)".into()); }
             if run("Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers' -Name 'HwSchMode' -Value 2 -Type DWord -ErrorAction SilentlyContinue; 'ok'").is_ok() { done.push("GPU Hardware Scheduling activé".into()); }
             if run("Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Name 'AllowAutoGameMode' -Value 1 -Type DWord -ErrorAction SilentlyContinue; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Name 'AutoGameModeEnabled' -Value 1 -Type DWord -ErrorAction SilentlyContinue; 'ok'").is_ok() { done.push("Game Mode Windows activé".into()); }
         }
@@ -393,7 +393,7 @@ pub fn apply_turbo_mode(mode: String) -> Result<TurboResult, String> {
             if run("powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>&1").is_ok() { done.push("Plan d'alimentation : Haute performance".into()); }
             if run("Clear-DnsClientCache; 'ok'").is_ok() { done.push("Cache DNS vidé".into()); }
             if run("$mem = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(0); [System.Runtime.InteropServices.Marshal]::FreeHGlobal($mem); [System.GC]::Collect(); 'ok'").is_ok() { done.push("Mémoire libérée".into()); }
-            if run("Get-Process | Where-Object { $_.CPU -lt 0.1 -and $_.WorkingSet -gt 500MB -and $_.Name -notin @('svchost','System','Registry','lsass') } | Stop-Process -Force -ErrorAction SilentlyContinue; 'ok'").is_ok() { done.push("Processus inutiles terminés".into()); }
+            if run("$protected = @('svchost','System','Registry','lsass','csrss','smss','winlogon','wininit','lsm','dwm','fontdrvhost','msseces','msmpeng','avgnt','avp','bdagent','ekrn','mbam','backupclient','veeam','veamagent','mmagent','nessus','falconhost'); Get-Process | Where-Object { $_.CPU -lt 0.1 -and $_.WorkingSet -gt 1GB -and $_.SessionId -ne 0 -and $_.Name -notin $protected } | Stop-Process -Force -ErrorAction SilentlyContinue; 'ok'").is_ok() { done.push("Processus inutiles terminés".into()); }
             if run("Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers' -Name 'HwSchMode' -Value 2 -Type DWord -ErrorAction SilentlyContinue; 'ok'").is_ok() { done.push("GPU Hardware Scheduling activé".into()); }
         }
     }

@@ -218,7 +218,11 @@ pub async fn get_gpu_detailed() -> Result<Vec<GpuDetailed>, String> {
                 name,
             }
         }).collect();
-        gpus.sort_by_key(|b| std::cmp::Reverse(!b.name.to_lowercase().contains("intel") ));
+        gpus.sort_by(|a, b| {
+            let a_intel = a.name.to_lowercase().contains("intel");
+            let b_intel = b.name.to_lowercase().contains("intel");
+            b_intel.cmp(&a_intel) // non-Intel (dédié) en premier
+        });
         Ok(gpus)
     }).await.map_err(|e| e.to_string())?
 }
@@ -402,29 +406,63 @@ pub async fn get_monitor_info() -> Result<Vec<MonitorDetail>, String> {
             let ps = r#"
 try {
     Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class GdiDpi {
+    [DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+    [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
+    public const int LOGPIXELSX = 88;
+}
+"@ -ErrorAction SilentlyContinue
+
     $screens = [System.Windows.Forms.Screen]::AllScreens
-    $wmiMonitors = @{}
+
+    # WMI monitor manufacturer map : DeviceName -> MonitorManufacturer
+    $wmiMfr = @{}
     Get-WmiObject -Class Win32_DesktopMonitor -ErrorAction SilentlyContinue | ForEach-Object {
-        $key = $_.Name -replace '[^a-zA-Z0-9]', ''
-        $wmiMonitors[$key] = $_
+        if ($_.DeviceID) {
+            $wmiMfr[$_.DeviceID] = if ($_.MonitorManufacturer) { $_.MonitorManufacturer } else { "" }
+        }
     }
+
     $i = 0
     $result = foreach ($s in $screens) {
         $i++
         $label = if ($s.Primary) { "Ecran Principal" } else { "Ecran $i" }
-        $dpi = try {
-            Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class DpiHelper { [DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int nIndex); }' -ErrorAction SilentlyContinue
-            0
-        } catch { 0 }
+
+        # DPI réel via GDI
+        $dpi = 96
+        try {
+            $hdc = [GdiDpi]::GetDC([IntPtr]::Zero)
+            if ($hdc -ne [IntPtr]::Zero) {
+                $dpi = [GdiDpi]::GetDeviceCaps($hdc, [GdiDpi]::LOGPIXELSX)
+                [GdiDpi]::ReleaseDC([IntPtr]::Zero, $hdc) | Out-Null
+            }
+        } catch { $dpi = 96 }
+
+        # Fabricant depuis WMI (cherche par DeviceName partiel)
+        $mfr = ""
+        foreach ($key in $wmiMfr.Keys) {
+            if ($key -like "*$($s.DeviceName.Replace('\\.\',''))*" -or $s.DeviceName -like "*$key*") {
+                $mfr = $wmiMfr[$key]; break
+            }
+        }
+        # Fallback : premier fabricant WMI disponible si un seul moniteur
+        if ($mfr -eq "" -and $wmiMfr.Count -eq 1) { $mfr = @($wmiMfr.Values)[0] }
+
         [PSCustomObject]@{
-            Name = $label
-            DeviceName = $s.DeviceName
-            Width = $s.Bounds.Width
-            Height = $s.Bounds.Height
-            Primary = $s.Primary
+            Name         = $label
+            DeviceName   = $s.DeviceName
+            Width        = $s.Bounds.Width
+            Height       = $s.Bounds.Height
+            Primary      = $s.Primary
             BitsPerPixel = $s.BitsPerPixel
-            WorkWidth = $s.WorkingArea.Width
-            WorkHeight = $s.WorkingArea.Height
+            WorkWidth    = $s.WorkingArea.Width
+            WorkHeight   = $s.WorkingArea.Height
+            DPI          = $dpi
+            Manufacturer = $mfr
         }
     }
     $result | ConvertTo-Json -Depth 2 -Compress
@@ -441,17 +479,16 @@ try {
             Ok(items.iter().map(|item| {
                 let w = item["Width"].as_u64().unwrap_or(0) as u32;
                 let h = item["Height"].as_u64().unwrap_or(0) as u32;
-                // Approximate PPI for common sizes (rough estimate)
-                let ppi = if w > 0 && h > 0 {
-                    // Standard 24" = 92ppi, 27" = 81ppi — fallback 96
-                    96u32
-                } else { 0 };
+                // DPI réel retourné par GDI (LOGPIXELSX), fallback 96
+                let ppi = item["DPI"].as_u64().unwrap_or(96) as u32;
+                let ppi = if ppi == 0 { 96 } else { ppi };
                 MonitorDetail {
                     name: item["Name"].as_str().unwrap_or("Écran").to_string(),
                     screen_width: w,
                     screen_height: h,
                     pixels_per_inch: ppi,
-                    manufacturer: item["DeviceName"].as_str().unwrap_or("").to_string(),
+                    // Fabricant WMI (MonitorManufacturer), vide si inconnu
+                    manufacturer: item["Manufacturer"].as_str().unwrap_or("").to_string(),
                     availability: if item["Primary"].as_bool().unwrap_or(false) { "Principal".to_string() } else { "Secondaire".to_string() },
                 }
             }).collect())
@@ -507,9 +544,20 @@ pub async fn get_environment_variables() -> Result<Vec<EnvVar>, String> {
     let sys_keys = ["PATH", "PATHEXT", "ComSpec", "OS", "SystemRoot", "windir",
         "ProgramFiles", "ProgramData", "SystemDrive", "NUMBER_OF_PROCESSORS",
         "PROCESSOR_ARCHITECTURE", "PROCESSOR_IDENTIFIER", "TEMP", "TMP"];
+    // Blocklist de patterns sensibles — la valeur est remplacée par [REDACTED]
+    let sensitive_patterns = [
+        "AWS_", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "PWD",
+        "KEY", "CREDENTIAL", "AUTH", "API_KEY", "PRIVATE", "APIKEY",
+    ];
     let mut vars: Vec<EnvVar> = std::env::vars().map(|(name, value)| {
         let var_type = if sys_keys.contains(&name.as_str()) { "Système" } else { "Utilisateur" }.to_string();
-        EnvVar { name, value, var_type }
+        let name_upper = name.to_uppercase();
+        let safe_value = if sensitive_patterns.iter().any(|p| name_upper.contains(p)) {
+            "[REDACTED]".to_string()
+        } else {
+            value
+        };
+        EnvVar { name, value: safe_value, var_type }
     }).collect();
     vars.sort_by_key(|a| a.name.to_lowercase());
     Ok(vars)
@@ -675,32 +723,28 @@ pub async fn get_bitlocker_report() -> Result<String, String> {
         {
             use std::process::Command;
             use std::os::windows::process::CommandExt;
-            let script = r#"
-$vols = Get-BitLockerVolume -ErrorAction SilentlyContinue
-if (-not $vols) { "Aucun volume BitLocker détecté ou module non disponible."; exit }
-foreach ($v in $vols) {
-    $mount = $v.MountPoint
-    $status = $v.VolumeStatus
-    $pct = $v.EncryptionPercentage
-    $prot = $v.ProtectionStatus
-    Write-Output "Volume : $mount | Statut : $status | Chiffrement : $pct% | Protection : $prot"
-    foreach ($kp in $v.KeyProtector) {
-        $type = $kp.KeyProtectorType
-        $rp = if ($kp.RecoveryPassword) { $kp.RecoveryPassword } else { "—" }
-        Write-Output "  Protecteur : $type | Clé récupération : $rp"
-    }
-}
-"#;
-            let tmp = std::env::temp_dir().join("nitrite_bde.ps1");
-            let full = format!("$OutputEncoding=[System.Text.Encoding]::UTF8;[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;\n{}", script);
-            let _ = std::fs::write(&tmp, full.as_bytes());
+            // Script injecté directement via -Command pour éviter la race condition TOCTOU
+            // (plus de fichier temporaire à nom fixe sur disque)
+            let script = "$OutputEncoding=[System.Text.Encoding]::UTF8;\
+[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;\
+$vols = Get-BitLockerVolume -ErrorAction SilentlyContinue;\
+if (-not $vols) { 'Aucun volume BitLocker detecte ou module non disponible.'; exit };\
+foreach ($v in $vols) {\
+  $mount = $v.MountPoint; $status = $v.VolumeStatus;\
+  $pct = $v.EncryptionPercentage; $prot = $v.ProtectionStatus;\
+  Write-Output \"Volume : $mount | Statut : $status | Chiffrement : $pct% | Protection : $prot\";\
+  foreach ($kp in $v.KeyProtector) {\
+    $type = $kp.KeyProtectorType;\
+    $rp = if ($kp.RecoveryPassword) { $kp.RecoveryPassword } else { '-' };\
+    Write-Output \"  Protecteur : $type | Cle recuperation : $rp\"\
+  }\
+}";
             let out = Command::new("powershell")
-                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp.to_str().unwrap_or("")])
+                .args(["-NoProfile", "-NonInteractive", "-Command", script])
                 .creation_flags(0x08000000)
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                 .unwrap_or_else(|e| format!("Erreur: {}", e));
-            let _ = std::fs::remove_file(&tmp);
             Ok(out)
         }
         #[cfg(not(target_os = "windows"))]

@@ -29,19 +29,26 @@ pub fn validate_script(code: String, language: String) -> ValidationResult {
         ("invoke-expression", "Exécution dynamique (IEX) détectée"),
         ("iex (", "Exécution dynamique (IEX) détectée"),
         ("downloadstring", "Téléchargement + exécution détecté"),
+        ("downloadfile", "Téléchargement de fichier détecté"),
         ("-encodedcommand", "Commande encodée Base64 détectée"),
+        // Shorts pour -EncodedCommand : bypassent facilement le filtre
+        (" -enc ", "Commande encodée Base64 (court) détectée"),
+        (" -e ", "Paramètre encodé suspect détecté"),
         ("disable-windowsoptionalfeature", "Désactivation de fonctionnalité Windows"),
         ("set-executionpolicy unrestricted", "Politique exécution permissive"),
+        // Téléchargement depuis internet — promu de warning à danger
+        ("invoke-webrequest", "Téléchargement depuis internet (Invoke-WebRequest)"),
+        ("iwr ", "Téléchargement depuis internet (iwr)"),
+        // Lancement de processus externe — danger si script utilisateur
+        ("start-process", "Lancement de processus externe (Start-Process)"),
     ];
 
     let warning_patterns: &[(&str, &str)] = &[
         ("stop-service", "Arrêt de service"),
         ("disable-netadapter", "Désactivation d'adaptateur réseau"),
         ("clear-eventlog", "Effacement des journaux d'événements"),
-        ("invoke-webrequest", "Téléchargement depuis internet"),
         ("curl ", "Téléchargement depuis internet"),
         ("wget ", "Téléchargement depuis internet"),
-        ("start-process", "Lancement de processus externe"),
         ("regedit", "Modification du registre"),
         ("taskkill", "Terminaison de processus"),
         ("sc config", "Modification de configuration service"),

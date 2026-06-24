@@ -251,7 +251,10 @@ pub fn get_route_table() -> Vec<RouteEntry> {
 // ─── Scan de ports ─────────────────────────────────────────────────────────────
 #[tauri::command]
 pub fn scan_ports(host: String, ports: Vec<u16>) -> Vec<PortScanResult> {
-    let h = host.replace(['\'', '"'], "");
+    let h = match validate_host(&host) {
+        Ok(h) => h,
+        Err(e) => { tracing::warn!("scan_ports: {}", e); return vec![]; }
+    };
     let ports_limited: Vec<u16> = ports.into_iter().take(100).collect();
     let ports_str: Vec<String> = ports_limited.iter().map(|p| p.to_string()).collect();
     let ports_joined = ports_str.join(",");
@@ -372,10 +375,38 @@ $procs = @{}; Get-Process | ForEach-Object { $procs[[string]$_.Id] = $_.ProcessN
     vec![]
 }
 
+/// Valide une URL pour check_http : uniquement http:// ou https://, rejette file/ftp/UNC.
+fn validate_http_url(url: &str) -> Result<String, String> {
+    let u = url.trim();
+    if u.is_empty() {
+        return Err("URL vide".into());
+    }
+    let lower = u.to_lowercase();
+    // Schémas interdits
+    if lower.starts_with("file://") || lower.starts_with("ftp://")
+        || lower.starts_with("\\\\") || lower.starts_with("//")
+    {
+        return Err(format!("Schéma d'URL non autorisé (file/ftp/UNC interdit): {}", u));
+    }
+    // Seuls http et https sont acceptés
+    if !lower.starts_with("http://") && !lower.starts_with("https://") {
+        return Err(format!("L'URL doit commencer par http:// ou https://, reçu: {}", u));
+    }
+    // Échappement des apostrophes pour PowerShell (simple quote → deux single quotes)
+    let escaped = u.replace('\'', "''");
+    Ok(escaped)
+}
+
 // ─── Vérification HTTP/HTTPS ───────────────────────────────────────────────────
 #[tauri::command]
 pub fn check_http(url: String) -> HttpCheckResult {
-    let url_clean = url.replace(['\'', '"'], "");
+    let url_clean = match validate_http_url(&url) {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::warn!("check_http: {}", e);
+            return HttpCheckResult { url, ..Default::default() };
+        }
+    };
     let ps = format!(r#"
 try {{
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -416,7 +447,10 @@ try {{
 // ─── Partages réseau ───────────────────────────────────────────────────────────
 #[tauri::command]
 pub fn get_net_shares(host: String) -> Vec<NetShareEntry> {
-    let h = host.replace(['\'', '"'], "");
+    let h = match validate_host(&host) {
+        Ok(h) => h,
+        Err(e) => { tracing::warn!("get_net_shares: {}", e); return vec![]; }
+    };
     let ps = format!(r#"
 try {{
     $shares = @(Get-WmiObject -ComputerName '{host}' Win32_Share -EA SilentlyContinue |

@@ -404,10 +404,26 @@ export const useThemeEditorStore = defineStore("themeEditor", () => {
     return JSON.stringify({ name: themeName.value, vars: editingVars.value }, null, 2);
   }
 
-  function importTheme(json: string) {
-    const parsed = JSON.parse(json);
-    editingVars.value = parsed.vars;
-    themeName.value = parsed.name ?? "Thème importé";
+  function importTheme(json: string): { ok: boolean; error?: string } {
+    try {
+      const parsed = JSON.parse(json);
+      if (!parsed || typeof parsed !== "object") return { ok: false, error: "Format invalide" };
+      if (!parsed.vars || typeof parsed.vars !== "object") return { ok: false, error: "Champ 'vars' manquant" };
+      const FORBIDDEN = /<\/?(style|script|link)/i;
+      const safeVars: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed.vars as Record<string, unknown>)) {
+        if (!String(k).startsWith("--")) continue;
+        const val = String(v);
+        if (FORBIDDEN.test(val) || val.includes("javascript:") || val.includes("expression(")) continue;
+        safeVars[k] = val;
+      }
+      if (Object.keys(safeVars).length === 0) return { ok: false, error: "Aucune variable CSS valide trouvée" };
+      editingVars.value = safeVars;
+      themeName.value = typeof parsed.name === "string" ? parsed.name.slice(0, 80) : "Thème importé";
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "JSON invalide" };
+    }
   }
 
   // Computed preview style object for scoped previews

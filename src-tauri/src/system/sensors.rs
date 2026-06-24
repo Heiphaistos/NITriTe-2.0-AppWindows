@@ -142,10 +142,18 @@ fn query_nvidia_smi() -> Vec<SensorReading> {
     use std::process::Command;
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
-    let paths = [
+    // Chemins absolus connus uniquement — pas de fallback PATH pour éviter le PATH hijacking
+    let known_paths = [
         r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
-        "nvidia-smi",
+        r"C:\Windows\System32\nvidia-smi.exe",
     ];
+    let paths: Vec<&str> = known_paths.iter()
+        .filter(|p| std::path::Path::new(p).exists())
+        .copied()
+        .collect();
+    if paths.is_empty() {
+        return vec![];
+    }
     for path in &paths {
         let mut cmd = Command::new(path);
         cmd.args([

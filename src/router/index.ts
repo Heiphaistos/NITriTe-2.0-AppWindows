@@ -227,7 +227,12 @@ const router = createRouter({
       meta: { title: "Rapports & Statistiques" },
     },
     // ═══ Nouvelles pages v26.46 ═══
-    { path: "/turbo-mode", redirect: "/optimizations" },
+    {
+      path: "/turbo-mode",
+      name: "turbo-mode",
+      component: () => import("@/pages/TurboModePage.vue"),
+      meta: { title: "Turbo Mode" },
+    },
     {
       path: "/hash-checker",
       name: "hash-checker",
@@ -289,6 +294,7 @@ const router = createRouter({
       component: () => import("@/pages/WinPEModePage.vue"),
       meta: { title: "Mode WinPE" },
     },
+    { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
 });
 

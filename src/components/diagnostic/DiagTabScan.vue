@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 import {
   CheckCircle, AlertTriangle, RefreshCw, ScanLine, Lock, LockOpen,
   Key, HardDrive, Battery,
-  FileDown, FileText, FileCode, Wrench,
+  FileDown, FileText, FileCode, Wrench, Cpu, MemoryStick,
 } from "lucide-vue-next";
 import NProgress from "@/components/ui/NProgress.vue";
 import NSpinner from "@/components/ui/NSpinner.vue";

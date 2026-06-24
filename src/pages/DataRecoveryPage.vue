@@ -341,7 +341,15 @@ function formatSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
 }
 
-onMounted(() => { loadShadows(); loadNtfsDrives(); });
+onMounted(async () => {
+  loadShadows();
+  loadNtfsDrives();
+  try {
+    userFolders.value = await invoke<UserFolder[]>("get_user_profile_folders");
+  } catch {
+    userFolders.value = [];
+  }
+});
 </script>
 
 <template>

@@ -310,9 +310,37 @@ pub async fn run_sfc_offline(windows_dir: String) -> Result<RepairResult, NiTriT
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
+            // Canonicalisation du chemin pour éviter le path traversal
+            let canon = std::fs::canonicalize(&windows_dir)
+                .map_err(|e| NiTriTeError::System(format!("Chemin windows_dir invalide: {}", e)))?;
+
+            let canon_str = canon.to_str()
+                .ok_or_else(|| NiTriTeError::System("Chemin windows_dir contient des caractères non UTF-8".to_string()))?
+                .to_string();
+
+            // Vérifie que le chemin est absolu (commence par une lettre de lecteur ex: C:\)
+            let is_abs_win = canon_str.len() >= 3
+                && canon_str.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+                && canon_str[1..].starts_with(":\\");
+            if !is_abs_win {
+                return Err(NiTriTeError::System(format!(
+                    "windows_dir doit être un chemin absolu Windows valide (ex: C:\\Windows), reçu: {}",
+                    canon_str
+                )));
+            }
+
+            // Vérifie que System32 existe dans ce répertoire (confirme que c'est bien un répertoire Windows)
+            let system32_path = canon.join("System32");
+            if !system32_path.exists() {
+                return Err(NiTriTeError::System(format!(
+                    "{}\\System32 introuvable — ce n'est pas un répertoire Windows valide.",
+                    canon_str
+                )));
+            }
+
             // SFC /scannow /offbootdir=C:\ /offwindir=C:\Windows
-            let drive = if windows_dir.len() >= 2 { windows_dir[..2].to_string() } else { "C:".to_string() } + "\\";
-            let windir = windows_dir.clone();
+            let drive = canon_str[..2].to_string() + "\\";
+            let windir = canon_str.clone();
             let out = std::process::Command::new("sfc")
                 .args([
                     "/scannow",
@@ -342,6 +370,22 @@ pub async fn run_sfc_offline(windows_dir: String) -> Result<RepairResult, NiTriT
 
 // ── Comptes utilisateurs offline ────────────────────────────────────────────
 
+/// Guard RAII pour décharger automatiquement une ruche de registre, même en cas d'erreur.
+#[cfg(target_os = "windows")]
+struct RegHiveGuard {
+    hive_key: String,
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for RegHiveGuard {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("reg")
+            .args(["unload", &self.hive_key])
+            .creation_flags(NO_WINDOW)
+            .status();
+    }
+}
+
 #[tauri::command]
 pub async fn list_offline_users(windows_dir: String) -> Result<Vec<OfflineUser>, NiTriTeError> {
     tokio::task::spawn_blocking(move || {
@@ -357,6 +401,9 @@ pub async fn list_offline_users(windows_dir: String) -> Result<Vec<OfflineUser>,
                 .args(["load", r"HKLM\OFFLINE_SAM", &sam_path])
                 .creation_flags(NO_WINDOW)
                 .status();
+
+            // Guard RAII : décharge la ruche à la sortie du scope (succès ou erreur)
+            let _hive_guard = RegHiveGuard { hive_key: r"HKLM\OFFLINE_SAM".to_string() };
 
             // Enumère les comptes sous HKLM\OFFLINE_SAM\SAM\Domains\Account\Users\Names
             let out = std::process::Command::new("reg")
@@ -380,12 +427,7 @@ pub async fn list_offline_users(windows_dir: String) -> Result<Vec<OfflineUser>,
                 })
                 .collect();
 
-            // Décharge la ruche
-            let _ = std::process::Command::new("reg")
-                .args(["unload", r"HKLM\OFFLINE_SAM"])
-                .creation_flags(NO_WINDOW)
-                .status();
-
+            // _hive_guard dropped ici → reg unload garanti
             Ok(users)
         }
         #[cfg(not(target_os = "windows"))]
@@ -438,6 +480,13 @@ pub async fn reset_user_password(windows_dir: String, username: String, new_pass
 
 #[tauri::command]
 pub async fn disk_wipe(disk_index: u32, method: String) -> Result<RepairResult, NiTriTeError> {
+    // Refus catégorique du disque 0 (disque système en WinPE)
+    if disk_index == 0 {
+        return Err(NiTriTeError::System(
+            "Cannot wipe disk 0 (system disk). Operation refused for safety.".to_string(),
+        ));
+    }
+
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
@@ -535,6 +584,10 @@ pub async fn detect_windows_installs() -> Result<Vec<WindowsInstall>, NiTriTeErr
                             .args(["load", &hive_key, &version_key])
                             .creation_flags(NO_WINDOW)
                             .status();
+
+                        // Guard RAII : décharge la ruche à la sortie du scope même en cas d'erreur
+                        let _hive_guard = RegHiveGuard { hive_key: hive_key.clone() };
+
                         let ver_out = std::process::Command::new("reg")
                             .args(["query", &format!("{}\\Microsoft\\Windows NT\\CurrentVersion", hive_key), "/v", "DisplayVersion"])
                             .creation_flags(NO_WINDOW)
@@ -547,10 +600,7 @@ pub async fn detect_windows_installs() -> Result<Vec<WindowsInstall>, NiTriTeErr
                             .output()
                             .map(|o| o.stdout)
                             .unwrap_or_default();
-                        let _ = std::process::Command::new("reg")
-                            .args(["unload", &hive_key])
-                            .creation_flags(NO_WINDOW)
-                            .status();
+                        // _hive_guard dropped à la fin de ce bloc if → reg unload garanti
                         let ver = String::from_utf8_lossy(&ver_out)
                             .lines()
                             .find(|l| l.contains("DisplayVersion"))
@@ -706,10 +756,48 @@ pub async fn enable_offline_account(windows_dir: String, username: String) -> Re
     .map_err(|e| NiTriTeError::System(e.to_string()))?
 }
 
+// ── Whitelist commandes WinPE ─────────────────────────────────────────────────
+
+/// Vérifie que le premier token de la commande est dans la whitelist autorisée.
+/// Retourne Ok(()) si autorisée, Err avec message sinon.
+fn validate_winpe_command(command: &str) -> Result<(), NiTriTeError> {
+    const ALLOWED_COMMANDS: &[&str] = &[
+        "ipconfig", "ping", "netsh", "wmic", "diskpart", "bcdedit", "bcdboot",
+        "bootrec", "sfc", "dism", "chkdsk", "net", "regedit", "reg", "robocopy",
+        "xcopy", "dir", "attrib", "format", "label", "vol", "mountvol",
+    ];
+
+    let first_token = command
+        .trim()
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_lowercase();
+
+    // Extrait le nom de fichier sans extension au cas où le chemin complet est fourni
+    let token_name = std::path::Path::new(&first_token)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&first_token)
+        .to_string();
+
+    if ALLOWED_COMMANDS.contains(&token_name.as_str()) {
+        Ok(())
+    } else {
+        Err(NiTriTeError::System(format!(
+            "Commande non autorisée: '{}'. Seules les commandes système WinPE sont acceptées.",
+            first_token
+        )))
+    }
+}
+
 // ── Exécution de commande générique WinPE ─────────────────────────────────────
 
 #[tauri::command]
 pub async fn winpe_run_command(command: String) -> Result<RepairResult, NiTriTeError> {
+    // Validation whitelist avant d'exécuter quoi que ce soit
+    validate_winpe_command(&command)?;
+
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {

@@ -58,6 +58,7 @@ interface SessionFrame {
 }
 const recording = ref(false);
 const sessionFrames = ref<SessionFrame[]>([]);
+function clearSession() { sessionFrames.value = []; }
 const sessionStart = ref<Date | null>(null);
 const sessionDuration = computed(() => {
   if (!sessionStart.value) return "00:00";
@@ -221,7 +222,7 @@ onMounted(async () => {
         gpu_data: raw.gpu_data ?? [],
         top_processes: (raw.top_processes ?? []).map((p: any) => ({
           name: p.name, pid: p.pid, cpu_percent: p.cpu_percent,
-          ram_percent: p.memory_mb ?? p.ram_percent ?? 0,
+          ram_percent: p.ram_percent ?? 0,
         })),
       };
       data.value = d;
@@ -331,7 +332,7 @@ onUnmounted(() => {
       Session enregistrée : <strong>{{ sessionFrames.length }} points</strong>
       — durée {{ durationDisplay }}
       <NButton variant="ghost" size="sm" @click="exportCSV"><Download :size="12" /> Télécharger CSV</NButton>
-      <button class="ann-remove" @click="sessionFrames = []">✕ Effacer</button>
+      <button class="ann-remove" @click="clearSession()">✕ Effacer</button>
     </div>
 
     <!-- Loading -->

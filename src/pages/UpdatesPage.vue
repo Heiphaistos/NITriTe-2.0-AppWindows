@@ -148,7 +148,7 @@ async function upgradeAllWinget() {
   if (backupBeforeUpdate.value) await createRestorePoint("NitritePreUpdate");
   wingetStatus.value = "updating"; wingetLogs.value = [];
   try {
-    await invokeRaw("upgrade_all");
+    await invokeRaw("upgrade_all", { excluded_ids: excludedIds.value });
     wingetStatus.value = "done"; wingetPkgs.value = [];
     notify.success("WinGet", "Toutes les mises à jour installées");
   } catch {

@@ -332,7 +332,8 @@ try {
 async fn trigger_windows_update() -> String {
     tokio::task::spawn_blocking(|| {
         // Déclenche le scan et l'install via UsoClient (Windows 10/11)
-        let r1 = std::process::Command::new("UsoClient.exe")
+        // Chemin absolu pour éviter le PATH hijacking
+        let r1 = std::process::Command::new(r"C:\Windows\System32\UsoClient.exe")
             .arg("StartInteractiveScan")
             .creation_flags(0x08000000)
             .output();

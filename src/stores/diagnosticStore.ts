@@ -20,18 +20,21 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
   const storageList     = ref<StoragePhysical[]>([]);
   const softwareList    = ref<InstalledSoftware[]>([]);
 
-  const loadingKeys = ref<Set<string>>(new Set());
+  const loadingKeys = ref<string[]>([]);
   const errors      = ref<Record<string, string>>({});
 
   // ── Computed ──────────────────────────────────────────────────────────────
-  const isLoading = computed(() => loadingKeys.value.size > 0);
+  const isLoading = computed(() => loadingKeys.value.length > 0);
   const hasBattery = computed(() => batteries.value.length > 0);
   const primaryGpu = computed(() => gpuList.value[0] ?? null);
+
+  function addLoading(key: string) { loadingKeys.value = [...loadingKeys.value, key]; }
+  function removeLoading(key: string) { loadingKeys.value = loadingKeys.value.filter(k => k !== key); }
 
   // ── Actions ───────────────────────────────────────────────────────────────
   async function fetchSysInfo(force = false) {
     if (!force && sysInfo.value) return sysInfo.value;
-    loadingKeys.value.add("sysInfo");
+    addLoading("sysInfo");
     try {
       const fn = force ? refreshCached : cachedInvoke;
       sysInfo.value = await fn<SysInfo>("get_system_info");
@@ -39,14 +42,14 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
     } catch (e: unknown) {
       errors.value["sysInfo"] = String(e);
     } finally {
-      loadingKeys.value.delete("sysInfo");
+      removeLoading("sysInfo");
     }
     return sysInfo.value;
   }
 
   async function fetchBatteries(force = false) {
     if (!force && batteries.value.length) return batteries.value;
-    loadingKeys.value.add("batteries");
+    addLoading("batteries");
     try {
       const fn = force ? refreshCached : cachedInvoke;
       batteries.value = await fn<BatteryDetailed[]>("get_battery_detailed");
@@ -54,14 +57,14 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
     } catch (e: unknown) {
       errors.value["batteries"] = String(e);
     } finally {
-      loadingKeys.value.delete("batteries");
+      removeLoading("batteries");
     }
     return batteries.value;
   }
 
   async function fetchGpuList(force = false) {
     if (!force && gpuList.value.length) return gpuList.value;
-    loadingKeys.value.add("gpuList");
+    addLoading("gpuList");
     try {
       const fn = force ? refreshCached : cachedInvoke;
       gpuList.value = await fn<GpuDetailed[]>("get_gpu_detailed");
@@ -69,14 +72,14 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
     } catch (e: unknown) {
       errors.value["gpuList"] = String(e);
     } finally {
-      loadingKeys.value.delete("gpuList");
+      removeLoading("gpuList");
     }
     return gpuList.value;
   }
 
   async function fetchNetworkAdapters(force = false) {
     if (!force && networkAdapters.value.length) return networkAdapters.value;
-    loadingKeys.value.add("network");
+    addLoading("network");
     try {
       const fn = force ? refreshCached : cachedInvoke;
       networkAdapters.value = await fn<NetworkAdapter[]>("get_network_adapters_detailed");
@@ -84,14 +87,14 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
     } catch (e: unknown) {
       errors.value["network"] = String(e);
     } finally {
-      loadingKeys.value.delete("network");
+      removeLoading("network");
     }
     return networkAdapters.value;
   }
 
   async function fetchStorageList(force = false) {
     if (!force && storageList.value.length) return storageList.value;
-    loadingKeys.value.add("storage");
+    addLoading("storage");
     try {
       const fn = force ? refreshCached : cachedInvoke;
       storageList.value = await fn<StoragePhysical[]>("get_storage_physical_info");
@@ -99,14 +102,14 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
     } catch (e: unknown) {
       errors.value["storage"] = String(e);
     } finally {
-      loadingKeys.value.delete("storage");
+      removeLoading("storage");
     }
     return storageList.value;
   }
 
   async function fetchSoftwareList(force = false) {
     if (!force && softwareList.value.length) return softwareList.value;
-    loadingKeys.value.add("software");
+    addLoading("software");
     try {
       const fn = force ? refreshCached : cachedInvoke;
       softwareList.value = await fn<InstalledSoftware[]>("get_installed_software");
@@ -114,7 +117,7 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
     } catch (e: unknown) {
       errors.value["software"] = String(e);
     } finally {
-      loadingKeys.value.delete("software");
+      removeLoading("software");
     }
     return softwareList.value;
   }
@@ -127,6 +130,7 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
       fetchGpuList(),
       fetchNetworkAdapters(),
       fetchStorageList(),
+      fetchSoftwareList(),
     ]);
   }
 
@@ -138,6 +142,7 @@ export const useDiagnosticStore = defineStore("diagnostic", () => {
       fetchGpuList(true),
       fetchNetworkAdapters(true),
       fetchStorageList(true),
+      fetchSoftwareList(true),
     ]);
   }
 

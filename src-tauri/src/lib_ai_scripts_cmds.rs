@@ -194,11 +194,19 @@ async fn get_builtin_scripts() -> Result<Vec<scripts::executor::ScriptEntry>, Ni
 async fn execute_script(
     content: String,
     script_type: String,
+    is_builtin: Option<bool>,
+    requires_interactive: Option<bool>,
     window: tauri::Window,
 ) -> Result<scripts::executor::ScriptResult, NiTriTeError> {
-    tokio::task::spawn_blocking(move || scripts::executor::execute_script(&content, &script_type, &window))
-        .await
-        .map_err(|e| NiTriTeError::System(e.to_string()))?
+    let builtin = is_builtin.unwrap_or(false);
+    let interactive = requires_interactive.unwrap_or(false);
+    tokio::task::spawn_blocking(move || {
+        scripts::executor::execute_script_with_flags(
+            &content, &script_type, builtin, interactive, &window,
+        )
+    })
+    .await
+    .map_err(|e| NiTriTeError::System(e.to_string()))?
 }
 
 // === Logs ===
@@ -378,9 +386,11 @@ async fn launch_lhm_portable() -> Result<(), NiTriTeError> {
     #[cfg(target_os = "windows")]
     {
         // Lancement avec élévation UAC (requis pour accès WMI matériel)
+        // Les apostrophes dans le chemin sont échappées ('') pour éviter l'injection PS
+        let escaped = exe.to_string_lossy().replace('\'', "''");
         std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command",
-                &format!("Start-Process -FilePath '{}' -Verb RunAs", exe.display())])
+                &format!("Start-Process -FilePath '{}' -Verb RunAs", escaped)])
             .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| NiTriTeError::System(e.to_string()))?;
@@ -439,20 +449,22 @@ async fn open_portables_dir() -> Result<(), NiTriTeError> {
 #[tauri::command]
 async fn launch_exe(relative_path: String) -> Result<(), NiTriTeError> {
     let base = utils::paths::portables_dir();
-    let full = base.join(std::path::Path::new(&relative_path));
+    // canonicalize() la base — doit réussir (le répertoire portables existe toujours)
     let canonical_base = base.canonicalize()
-        .unwrap_or(base.clone());
+        .map_err(|e| NiTriTeError::System(format!("Répertoire portables inaccessible: {}", e)))?;
+    let full = base.join(std::path::Path::new(&relative_path));
+    if !full.exists() {
+        return Err(NiTriTeError::System(format!("Fichier non trouvé: {}", full.display())));
+    }
+    // Si canonicalize() échoue après vérification d'existence, c'est suspect → erreur
     let canonical_full = full.canonicalize()
-        .unwrap_or_else(|_| full.clone());
+        .map_err(|e| NiTriTeError::System(format!("Chemin non résolvable: {}", e)))?;
     if !canonical_full.starts_with(&canonical_base) {
         return Err(NiTriTeError::CommandDenied(
             "Chemin hors du répertoire portables autorisé".into(),
         ));
     }
-    if !full.exists() {
-        return Err(NiTriTeError::System(format!("Fichier non trouvé: {}", full.display())));
-    }
-    std::process::Command::new(&full)
+    std::process::Command::new(&canonical_full)
         .spawn()
         .map_err(|e| NiTriTeError::System(format!("Lancement impossible: {}", e)))?;
     Ok(())
@@ -493,10 +505,21 @@ async fn get_export_dir() -> Result<String, NiTriTeError> {
 #[tauri::command]
 async fn save_export_file(filename: String, content: String) -> Result<String, NiTriTeError> {
     let file_path = tokio::task::spawn_blocking(move || -> Result<std::path::PathBuf, NiTriTeError> {
+        // Extrait uniquement le nom de fichier terminal — rejette tout séparateur ou traversal
+        let safe_name = std::path::Path::new(&filename)
+            .file_name()
+            .ok_or_else(|| NiTriTeError::CommandDenied("Nom de fichier invalide".into()))?
+            .to_str()
+            .ok_or_else(|| NiTriTeError::CommandDenied("Encodage du nom de fichier invalide".into()))?
+            .to_string();
+        // Refus explicite des composants de traversal résiduels
+        if safe_name.contains("..") || safe_name.contains('/') || safe_name.contains('\\') {
+            return Err(NiTriTeError::CommandDenied("Nom de fichier interdit".into()));
+        }
         let dir = nitrite_export_dir()?;
-        let path = dir.join(&filename);
+        let path = dir.join(&safe_name);
         std::fs::write(&path, content.as_bytes())
-            .map_err(|e| NiTriTeError::System(format!("Écriture {}: {}", filename, e)))?;
+            .map_err(|e| NiTriTeError::System(format!("Écriture {}: {}", safe_name, e)))?;
         Ok(path)
     })
     .await

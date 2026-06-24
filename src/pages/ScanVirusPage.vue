@@ -226,9 +226,19 @@ async function startScan(type: "quick" | "full" | "offline" | "custom") {
 
   let psCommand: string;
   if (type === "offline") {
+    const confirmed = window.confirm(
+      "Cette opération va redémarrer votre ordinateur pour effectuer un scan au démarrage Windows. Continuer ?"
+    );
+    if (!confirmed) { scanning.value = false; return; }
     psCommand = "Start-MpWDOScan";
   } else if (type === "custom") {
-    psCommand = `Start-MpScan -ScanType CustomScan -ScanPath '${customPath.value}'`;
+    const safePath = customPath.value.replace(/'/g, "''");
+    if (!/^[A-Za-z]:\\/.test(customPath.value)) {
+      notifications.error("Chemin invalide", "Le chemin doit commencer par une lettre de lecteur (ex: C:\\)");
+      scanning.value = false;
+      return;
+    }
+    psCommand = `Start-MpScan -ScanType CustomScan -ScanPath '${safePath}'`;
   } else {
     psCommand = `Start-MpScan -ScanType ${type === "quick" ? "QuickScan" : "FullScan"}`;
   }

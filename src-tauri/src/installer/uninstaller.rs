@@ -130,6 +130,30 @@ fn emit(window: &tauri::Window, step: &str, app: &str, msg: &str) {
 //  5. Vérification registre pour confirmer (pas de faux positif)
 //
 fn run_uninstall_silent(app_name: &str, uninstall_string: &str, _window: &tauri::Window) -> bool {
+    // ── Validation Rust de l'uninstall_string ────────────────────────────────
+    // Refuse les strings qui ne correspondent pas à un désinstalleur légitime.
+    // Bloque les commandes shell connues pour prévenir l'injection.
+    {
+        let us_lower = uninstall_string.trim().to_lowercase();
+        // Préfixes autorisés : msiexec, ou chemin absolu Windows (C:\...), ou UNC (\\)
+        let allowed = us_lower.starts_with("msiexec")
+            || us_lower.starts_with("msiexec.exe")
+            || (us_lower.len() >= 3 && us_lower.chars().next().map_or(false, |c| c.is_ascii_alphabetic())
+                && us_lower[1..].starts_with(":\\"))
+            || us_lower.starts_with("\"")  // chemin entre guillemets, ex : "C:\Program Files\..."
+            || us_lower.starts_with("\\\\"); // UNC path
+        // Préfixes interdits explicitement (commandes shell)
+        let denied_prefixes = ["cmd", "powershell", "wscript", "cscript", "rundll32", "regsvr32"];
+        let is_denied = denied_prefixes.iter().any(|&d| {
+            us_lower == d
+                || us_lower.starts_with(&format!("{} ", d))
+                || us_lower.starts_with(&format!("{}.exe", d))
+        });
+        if !allowed || is_denied {
+            return false;
+        }
+    }
+
     // Encoder les valeurs via JSON : double quotes autour, caractères spéciaux échappés.
     // La chaîne JSON est directement interprétable par ConvertFrom-Json dans PS.
     // Pas de format!() avec ces valeurs — on construit le script par concaténation contrôlée.
@@ -161,6 +185,8 @@ try {{
         # ── MSI ──────────────────────────────────────────────────────────────
         $re = '/[Ii](\{{[^}}]+\}})'
         $msiArgs = ($s -replace $re, '/X$1') -replace 'msiexec(\.exe)?\s*', ''
+        # Sanitisation : retire les caractères pouvant injecter des commandes PS
+        $msiArgs = $msiArgs -replace '[&|;`]|\$\(|\$\{{', ''
         if ($msiArgs -notmatch '/q') {{ $msiArgs = $msiArgs.Trim() + ' /qn /norestart' }}
         $proc = Start-Process -FilePath 'msiexec.exe' `
             -ArgumentList $msiArgs.Trim() -Wait -PassThru -ErrorAction Stop
@@ -263,7 +289,7 @@ foreach ($base in $fsPaths) {{
                      ($fp -like "*\microsoft\windows defender\*") -or
                      ($fp -like "*\programdata\microsoft\windows\*") -or
                      ($fp.Length -lt 20)
-            if (-not $isSys) {{ $found += "📁 $($_.FullName)" }}
+            if (-not $isSys) {{ $found += "FS:$($_.FullName)" }}
         }}
     }}
 }}
@@ -291,7 +317,7 @@ foreach ($rp in $regPaths) {{
                      # Protège HKLM pour les entrées Microsoft/Windows natives
                      ($rp -like 'HKLM:*' -and $_.PSPath -like '*\Microsoft\*') -or
                      ($rp -like 'HKLM:*' -and $_.PSPath -like '*\Windows*')
-            if (-not $isSys) {{ $found += "🔑 $($_.PSPath)" }}
+            if (-not $isSys) {{ $found += "RK:$($_.PSPath)" }}
         }}
     }}
 }}
@@ -301,16 +327,16 @@ foreach ($rp in $runPaths) {{
     if (-not (Test-Path $rp)) {{ continue }}
     (Get-ItemProperty $rp -ErrorAction SilentlyContinue).PSObject.Properties |
         Where-Object {{ $_.Name -notlike 'PS*' }} |
-        ForEach-Object {{ if (Match-Kw $_.Name) {{ $found += "🚀 $($_.Name)" }} }}
+        ForEach-Object {{ if (Match-Kw $_.Name) {{ $found += "EX:$($_.Name)" }} }}
 }}
 
 $sc = @("$env:USERPROFILE\Desktop","$env:APPDATA\Microsoft\Windows\Start Menu\Programs")
 foreach ($p in $sc) {{
     if (-not (Test-Path $p)) {{ continue }}
     Get-ChildItem $p -Recurse -Include '*.lnk' -ErrorAction SilentlyContinue |
-        Where-Object {{ Match-Kw $_.BaseName }} | ForEach-Object {{ $found += "🔗 $($_.FullName)" }}
+        Where-Object {{ Match-Kw $_.BaseName }} | ForEach-Object {{ $found += "LN:$($_.FullName)" }}
     Get-ChildItem $p -Directory -ErrorAction SilentlyContinue |
-        Where-Object {{ Match-Kw $_.Name }} | ForEach-Object {{ $found += "📁 Menu: $($_.FullName)" }}
+        Where-Object {{ Match-Kw $_.Name }} | ForEach-Object {{ $found += "FS:Menu:$($_.FullName)" }}
 }}
 
 $found | ConvertTo-Json -Compress
@@ -374,20 +400,26 @@ function Is-SafeToDelete($item) {{
         'HKCU:\SOFTWARE\Microsoft\Windows NT\',
         'HKCU:\SOFTWARE\Classes\'
     )
-    if ($item -like '📁 *' -or $item -like '🔗 *') {{
-        $raw = if ($item -like '📁 Menu: *') {{ $item.Substring(9) }} else {{ $item.Substring(3) }}
+    # Préfixes ASCII : FS: (filesystem), RK: (registry key), EX: (executable/Run), LN: (link)
+    # FS:Menu: = dossier dans le menu démarrer
+    $parts = $item -split ':', 2
+    $prefix = $parts[0]
+    if ($prefix -eq 'FS' -or $prefix -eq 'LN') {{
+        # FS:Menu:chemin ou FS:chemin ou LN:chemin
+        $raw = ($item -split ':', 2)[1]
+        if ($raw -like 'Menu:*') {{ $raw = ($raw -split ':', 2)[1] }}
         # Longueur minimum : évite les chemins racine trop courts
         if ($raw.Length -lt 12) {{ return $false }}
         foreach ($p in $sysFS) {{ if ($raw -like "*$p*") {{ return $false }} }}
         return $true
     }}
-    if ($item -like '🔑 *') {{
-        $path = $item.Substring(3)
+    if ($prefix -eq 'RK') {{
+        $path = ($item -split ':', 2)[1]
         if ($path.Length -lt 20) {{ return $false }}
         foreach ($p in $sysReg) {{ if ($path -like "$p*") {{ return $false }} }}
         return $true
     }}
-    if ($item -like '🚀 *') {{ return $true }}  # Entrées Run : toujours safe
+    if ($prefix -eq 'EX') {{ return $true }}  # Entrées Run : toujours safe
     return $false
 }}
 
@@ -399,23 +431,22 @@ foreach ($item in $items) {{
         continue
     }}
     try {{
-        if ($item -like '📁 Menu: *') {{
-            $path = $item.Substring(9)
+        $parts = $item -split ':', 2
+        $prefix = $parts[0]
+        $payload = $parts[1]
+        if ($prefix -eq 'FS' -and $payload -like 'Menu:*') {{
+            $path = ($payload -split ':', 2)[1]
             Remove-Item $path -Recurse -Force -ErrorAction Stop; $ok++
-        }} elseif ($item -like '📁 *') {{
-            $path = $item.Substring(3)
-            Remove-Item $path -Recurse -Force -ErrorAction Stop; $ok++
-        }} elseif ($item -like '🔑 *') {{
-            $path = $item.Substring(3)
-            Remove-Item $path -Recurse -Force -ErrorAction Stop; $ok++
-        }} elseif ($item -like '🚀 *') {{
-            $name = $item.Substring(3)
-            Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $name -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $name -ErrorAction SilentlyContinue
+        }} elseif ($prefix -eq 'FS') {{
+            Remove-Item $payload -Recurse -Force -ErrorAction Stop; $ok++
+        }} elseif ($prefix -eq 'RK') {{
+            Remove-Item $payload -Recurse -Force -ErrorAction Stop; $ok++
+        }} elseif ($prefix -eq 'EX') {{
+            Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $payload -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $payload -ErrorAction SilentlyContinue
             $ok++
-        }} elseif ($item -like '🔗 *') {{
-            $path = $item.Substring(3)
-            Remove-Item $path -Force -ErrorAction Stop; $ok++
+        }} elseif ($prefix -eq 'LN') {{
+            Remove-Item $payload -Force -ErrorAction Stop; $ok++
         }} else {{ $fail++ }}
     }} catch {{ $fail++ }}
 }}
@@ -491,12 +522,13 @@ $target = {} | ConvertFrom-Json
 $ok = 0; $fail = 0
 
 # Export des clés registre en .reg
-$regItems = $items | Where-Object {{ $_ -like '🔑 *' }}
+# Préfixes ASCII : RK: (registry key), FS: (filesystem), LN: (link), EX: (Run entry)
+$regItems = $items | Where-Object {{ ($_ -split ':', 2)[0] -eq 'RK' }}
 if ($regItems) {{
     $regFile = Join-Path $target 'residuals_registry.reg'
     "Windows Registry Editor Version 5.00`r`n" | Out-File $regFile -Encoding Unicode
     foreach ($r in $regItems) {{
-        $path = $r.Substring(3)
+        $path = ($r -split ':', 2)[1]
         try {{
             $path2 = $path -replace '^.*::', ''
             & reg export "$path2" "$regFile" /y 2>$null
@@ -506,11 +538,11 @@ if ($regItems) {{
 }}
 
 # Copie des fichiers
-$fileItems = $items | Where-Object {{ $_ -like '📁 *' -or $_ -like '🔗 *' }}
+$fileItems = $items | Where-Object {{ $p = ($_ -split ':', 2)[0]; $p -eq 'FS' -or $p -eq 'LN' }}
 foreach ($item in $fileItems) {{
-    $path = if ($item -like '📁 Menu: *') {{ $item.Substring(10) }}
-            elseif ($item -like '📁 *')   {{ $item.Substring(3) }}
-            else                           {{ $item.Substring(3) }}
+    $payload = ($item -split ':', 2)[1]
+    $path = if ($payload -like 'Menu:*') {{ ($payload -split ':', 2)[1] }}
+            else                          {{ $payload }}
     try {{
         Copy-Item -Path $path -Destination $target -Recurse -Force -ErrorAction Stop; $ok++
     }} catch {{ $fail++ }}
@@ -534,24 +566,6 @@ foreach ($item in $fileItems) {{
         failed_count: del.failed_count,
         message: format!("{} copié(s) dans «{}», {} supprimé(s)", copied + copy_fail, target, del.deleted_count),
     }
-}
-
-#[allow(dead_code)]
-fn parse_cmd(cmd: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    for ch in cmd.chars() {
-        match ch {
-            '"' => in_quotes = !in_quotes,
-            ' ' if !in_quotes => {
-                if !current.is_empty() { parts.push(current.clone()); current.clear(); }
-            }
-            _ => current.push(ch),
-        }
-    }
-    if !current.is_empty() { parts.push(current); }
-    parts
 }
 
 fn run_ps(script: &str) -> Option<String> {

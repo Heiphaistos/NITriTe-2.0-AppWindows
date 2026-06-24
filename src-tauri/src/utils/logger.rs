@@ -1,9 +1,18 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing_appender::rolling;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use super::paths;
 
+// Protection contre la double initialisation (ex: tests, rechargement Tauri)
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
+
 pub fn init_logger() {
+    // swap retourne l'ancienne valeur : si déjà true, on sort immédiatement
+    if INITIALIZED.swap(true, Ordering::SeqCst) {
+        return; // Already initialized
+    }
+
     let logs_dir = paths::logs_dir();
 
     let file_appender = rolling::daily(&logs_dir, "nitrite.log");

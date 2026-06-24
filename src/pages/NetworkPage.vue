@@ -217,36 +217,51 @@ async function runDiagnostic() {
   diagDone.value = false;
   const checks: DiagCheck[] = [];
 
-  // 1. Connectivité locale (passerelle)
+  // Checks 1, 2, 3, 5 en parallèle (indépendants)
   const gw = overview.value?.default_gateway || "";
-  if (gw) {
-    try {
-      const r = await invoke<any>("run_system_command", { cmd: "cmd", args: ["/c", "ping", "-n", "2", "-w", "1000", gw] });
-      const out = (r?.stdout || r || "").toString();
-      const ok = out.includes("TTL=") || out.includes("ttl=");
-      checks.push({ id: "gw", label: "Passerelle accessible", status: ok ? "ok" : "error", detail: ok ? `Ping ${gw} OK` : `Impossible de joindre la passerelle ${gw}`, tip: ok ? undefined : "Vérifiez votre câble réseau ou votre routeur." });
-    } catch { checks.push({ id: "gw", label: "Passerelle accessible", status: "warn", detail: "Ping passerelle échoué (accès restreint)", tip: "Exécutez Nitrite en administrateur pour les tests ping." }); }
-  } else {
+  const [gwResult, inetResult, dnsResult, dhcpResult] = await Promise.allSettled([
+    // 1. Passerelle
+    gw
+      ? invoke<any>("run_system_command", { cmd: "cmd", args: ["/c", "ping", "-n", "2", "-w", "1000", gw] })
+      : Promise.reject(new Error("no-gw")),
+    // 2. Internet
+    invoke<any>("run_system_command", { cmd: "cmd", args: ["/c", "ping", "-n", "2", "-w", "2000", "8.8.8.8"] }),
+    // 3. DNS resolution
+    invoke<any>("run_system_command", { cmd: "cmd", args: ["/c", "nslookup", "google.com"] }),
+    // 5. DHCP
+    invoke<any>("run_system_command", { cmd: "ipconfig", args: ["/all"] }),
+  ]);
+
+  // 1. Passerelle
+  if (!gw) {
     checks.push({ id: "gw", label: "Passerelle accessible", status: "error", detail: "Aucune passerelle détectée", tip: "Vérifiez que votre interface réseau est active et configurée." });
+  } else if (gwResult.status === "fulfilled") {
+    const out = (gwResult.value?.stdout || gwResult.value || "").toString();
+    const ok = out.includes("TTL=") || out.includes("ttl=");
+    checks.push({ id: "gw", label: "Passerelle accessible", status: ok ? "ok" : "error", detail: ok ? `Ping ${gw} OK` : `Impossible de joindre la passerelle ${gw}`, tip: ok ? undefined : "Vérifiez votre câble réseau ou votre routeur." });
+  } else {
+    checks.push({ id: "gw", label: "Passerelle accessible", status: "warn", detail: "Ping passerelle échoué (accès restreint)", tip: "Exécutez Nitrite en administrateur pour les tests ping." });
   }
 
-  // 2. Connectivité Internet (8.8.8.8)
-  try {
-    const r = await invoke<any>("run_system_command", { cmd: "cmd", args: ["/c", "ping", "-n", "2", "-w", "2000", "8.8.8.8"] });
-    const out = (r?.stdout || r || "").toString();
+  // 2. Internet
+  if (inetResult.status === "fulfilled") {
+    const out = (inetResult.value?.stdout || inetResult.value || "").toString();
     const ok = out.includes("TTL=") || out.includes("ttl=");
     checks.push({ id: "inet", label: "Connexion Internet", status: ok ? "ok" : "error", detail: ok ? "Internet accessible (8.8.8.8 répond)" : "8.8.8.8 inaccessible — pas d'Internet", tip: ok ? undefined : "Vérifiez votre routeur/box et la connexion WAN." });
-  } catch { checks.push({ id: "inet", label: "Connexion Internet", status: "warn", detail: "Test ping non disponible (droits admin requis)" }); }
+  } else {
+    checks.push({ id: "inet", label: "Connexion Internet", status: "warn", detail: "Test ping non disponible (droits admin requis)" });
+  }
 
   // 3. Résolution DNS
-  try {
-    const r = await invoke<any>("run_system_command", { cmd: "cmd", args: ["/c", "nslookup", "google.com"] });
-    const out = (r?.stdout || r || "").toString();
+  if (dnsResult.status === "fulfilled") {
+    const out = (dnsResult.value?.stdout || dnsResult.value || "").toString();
     const ok = out.includes("Address") && !out.includes("NXDOMAIN") && !out.includes("can't find");
     checks.push({ id: "dns_res", label: "Résolution DNS (google.com)", status: ok ? "ok" : "error", detail: ok ? "DNS résout correctement" : "Échec de résolution — DNS potentiellement bloqué ou mal configuré", tip: ok ? undefined : "Essayez de changer votre DNS dans Paramètres réseau (ex: 8.8.8.8 ou 1.1.1.1)." });
-  } catch { checks.push({ id: "dns_res", label: "Résolution DNS", status: "warn", detail: "Test nslookup non disponible" }); }
+  } else {
+    checks.push({ id: "dns_res", label: "Résolution DNS", status: "warn", detail: "Test nslookup non disponible" });
+  }
 
-  // 4. Qualité DNS configurés
+  // 4. Qualité DNS configurés (données déjà en mémoire)
   const dnsServers = overview.value?.dns_servers || [];
   if (dnsServers.length === 0) {
     checks.push({ id: "dns_q", label: "Serveurs DNS configurés", status: "error", detail: "Aucun serveur DNS détecté", tip: "Configurez des serveurs DNS manuellement (8.8.8.8 ou 1.1.1.1)." });
@@ -261,16 +276,17 @@ async function runDiagnostic() {
     else checks.push({ id: "dns_q", label: "Serveurs DNS", status: "warn", detail: `${detail} — DNS personnalisés non reconnus` });
   }
 
-  // 5. DHCP / IP statique (via ipconfig)
-  try {
-    const r = await invoke<any>("run_system_command", { cmd: "ipconfig", args: ["/all"] });
-    const out = (r?.stdout || r || "").toString();
+  // 5. DHCP / IP statique
+  if (dhcpResult.status === "fulfilled") {
+    const out = (dhcpResult.value?.stdout || dhcpResult.value || "").toString();
     const dhcpEnabled = out.toLowerCase().includes("dhcp enabled") && out.toLowerCase().includes("yes");
     const staticIp = out.toLowerCase().includes("dhcp enabled") && out.toLowerCase().includes("no");
     if (dhcpEnabled) checks.push({ id: "dhcp", label: "Configuration IP", status: "ok", detail: "DHCP activé — IP attribuée automatiquement" });
     else if (staticIp) checks.push({ id: "dhcp", label: "Configuration IP", status: "info", detail: "IP statique configurée manuellement", tip: "Une IP statique est normale sur certains réseaux d'entreprise." });
     else checks.push({ id: "dhcp", label: "Configuration IP", status: "info", detail: "Mode DHCP indéterminé" });
-  } catch { checks.push({ id: "dhcp", label: "Configuration IP", status: "info", detail: "Impossible de déterminer DHCP/statique" }); }
+  } else {
+    checks.push({ id: "dhcp", label: "Configuration IP", status: "info", detail: "Impossible de déterminer DHCP/statique" });
+  }
 
   // 6. Proxy actif
   if (overview.value?.proxy_enabled) {

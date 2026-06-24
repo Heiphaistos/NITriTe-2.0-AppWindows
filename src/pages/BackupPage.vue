@@ -233,8 +233,21 @@ async function loadBackups() {
   }
 }
 
-async function openEntryFolder(_filename: string) {
-  await openSaveFolder();
+async function openEntryFolder(filename: string) {
+  try {
+    const folder = backupResult.value?.path
+      ? backupResult.value.path.substring(0, backupResult.value.path.lastIndexOf("\\"))
+      : null;
+    if (folder) {
+      await invoke("open_path", { path: folder });
+      return;
+    }
+    const { homeDir, join } = await import("@tauri-apps/api/path");
+    const defaultFolder = await join(await homeDir(), "Documents", "NiTriTe", "backups");
+    await invoke("open_path", { path: defaultFolder });
+  } catch {
+    notify.error(`Impossible d'ouvrir le dossier pour ${filename}`);
+  }
 }
 
 async function openBackupFolder() {

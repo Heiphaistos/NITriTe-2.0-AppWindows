@@ -108,7 +108,8 @@ async function confirmForceRemove() {
   }
   const app = forceRemoveApp.value;
   forceRemoving.value = true;
-  const regKey = app.registry_key ?? app.name;
+  const rawKey = app.registry_key ?? app.name;
+  const regKey = rawKey.replace(/'/g, "''").replace(/[`$()]/g, "");
   try {
     await invoke("run_system_command", {
       cmd: "powershell",
