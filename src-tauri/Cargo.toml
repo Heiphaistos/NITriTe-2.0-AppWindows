@@ -30,7 +30,7 @@ tauri-plugin-opener = "2"
 # Systeme
 sysinfo = "0.32"
 wmi = "0.14"
-winreg = "0.52"
+winreg = "0.55"
 
 # Async — features minimaux, évite +200KB de code inutilisé
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }
