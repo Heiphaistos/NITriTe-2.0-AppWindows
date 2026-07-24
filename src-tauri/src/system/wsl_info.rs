@@ -22,8 +22,15 @@ pub struct WslInfo {
 }
 
 
+// Anti-freeze : wsl.exe est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_wsl_info() -> WslInfo {
+pub async fn get_wsl_info() -> WslInfo {
+    tokio::task::spawn_blocking(get_wsl_info_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_wsl_info_blocking() -> WslInfo {
     // Check if wsl.exe exists
     #[cfg(target_os = "windows")]
     {
@@ -131,8 +138,15 @@ try {
     WslInfo { installed: false, error: "Erreur lecture WSL".to_string(), ..Default::default() }
 }
 
+// Anti-freeze : wsl.exe est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn wsl_run_command(distro: String, command: String) -> Result<String, String> {
+pub async fn wsl_run_command(distro: String, command: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || wsl_run_command_blocking(distro, command))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn wsl_run_command_blocking(distro: String, command: String) -> Result<String, String> {
     let dist = distro.replace(['"', '\''], "");
     let cmd = command.trim().to_string();
     #[cfg(target_os = "windows")]
@@ -168,8 +182,15 @@ pub fn wsl_run_command(distro: String, command: String) -> Result<String, String
     Err("Non disponible".to_string())
 }
 
+// Anti-freeze : wsl.exe est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn wsl_set_default_version(version: u32) -> Result<String, String> {
+pub async fn wsl_set_default_version(version: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || wsl_set_default_version_blocking(version))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn wsl_set_default_version_blocking(version: u32) -> Result<String, String> {
     let v = if version == 1 { 1u32 } else { 2u32 };
     #[cfg(target_os = "windows")]
     {
