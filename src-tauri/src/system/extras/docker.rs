@@ -31,8 +31,15 @@ pub struct DockerInfo {
     pub images: Vec<DockerImage>,
 }
 
+// Anti-freeze : docker CLI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_docker_info() -> Result<DockerInfo, String> {
+pub async fn get_docker_info() -> Result<DockerInfo, String> {
+    tokio::task::spawn_blocking(get_docker_info_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_docker_info_blocking() -> Result<DockerInfo, String> {
     let version_out = std::process::Command::new("docker")
         .args(["version", "--format", "{{.Server.Version}}"])
         .creation_flags(0x08000000)
@@ -88,8 +95,15 @@ fn parse_docker_images() -> Vec<DockerImage> {
     }).collect()
 }
 
+// Anti-freeze : docker CLI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn docker_container_action(container_id: String, action: String) -> Result<String, String> {
+pub async fn docker_container_action(container_id: String, action: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || docker_container_action_blocking(container_id, action))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn docker_container_action_blocking(container_id: String, action: String) -> Result<String, String> {
     let valid_actions = ["start", "stop", "restart", "rm", "kill"];
     if !valid_actions.contains(&action.as_str()) {
         return Err(format!("Action invalide: {}", action));
@@ -102,8 +116,15 @@ pub fn docker_container_action(container_id: String, action: String) -> Result<S
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+// Anti-freeze : docker CLI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn docker_image_remove(image_id: String) -> Result<String, String> {
+pub async fn docker_image_remove(image_id: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || docker_image_remove_blocking(image_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn docker_image_remove_blocking(image_id: String) -> Result<String, String> {
     let out = std::process::Command::new("docker")
         .args(["rmi", &image_id])
         .creation_flags(0x08000000)
@@ -112,8 +133,15 @@ pub fn docker_image_remove(image_id: String) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+// Anti-freeze : docker CLI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn docker_container_logs(container_id: String, lines: u32) -> Result<String, String> {
+pub async fn docker_container_logs(container_id: String, lines: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || docker_container_logs_blocking(container_id, lines))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn docker_container_logs_blocking(container_id: String, lines: u32) -> Result<String, String> {
     let n = lines.min(500).to_string();
     let out = std::process::Command::new("docker")
         .args(["logs", "--tail", &n, "--timestamps", &container_id])
