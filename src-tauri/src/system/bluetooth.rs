@@ -33,8 +33,15 @@ pub struct BluetoothReport {
     pub error: String,
 }
 
+// Anti-freeze : PowerShell/WMI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_bluetooth_info() -> BluetoothReport {
+pub async fn get_bluetooth_info() -> BluetoothReport {
+    tokio::task::spawn_blocking(get_bluetooth_info_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_bluetooth_info_blocking() -> BluetoothReport {
     let ps = r#"
 try {
     # Get Bluetooth adapters via WMI

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, provide, onMounted, onUnmounted, onErrorCaptured, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import logoUrl from "@/assets/nitrite-logo.jpg";
+import logoUrl from "@/assets/nitrite-mascot.png";
 import AppSidebar from "@/components/layout/AppSidebar.vue";
 import AppHeader from "@/components/layout/AppHeader.vue";
 import AppStatusBar from "@/components/layout/AppStatusBar.vue";

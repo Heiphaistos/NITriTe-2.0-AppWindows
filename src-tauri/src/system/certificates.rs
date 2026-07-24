@@ -23,8 +23,15 @@ pub struct CertsData {
     pub expiring_soon_count: u32,
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_certificates() -> CertsData {
+pub async fn get_certificates() -> CertsData {
+    tokio::task::spawn_blocking(get_certificates_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_certificates_blocking() -> CertsData {
     let ps = r#"
 # Sortie UTF-8 : Subject/Issuer de certificats peuvent contenir des accents
 # (organisations FR : « O=Société … ») → sinon mojibake côté Rust.

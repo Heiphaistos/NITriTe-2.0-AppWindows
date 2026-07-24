@@ -36,8 +36,15 @@ pub struct FirewallInfo {
     pub total_custom: u32,
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_firewall_rules() -> FirewallInfo {
+pub async fn get_firewall_rules() -> FirewallInfo {
+    tokio::task::spawn_blocking(get_firewall_rules_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_firewall_rules_blocking() -> FirewallInfo {
     let ps = r#"
 $out = @{}
 

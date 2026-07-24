@@ -40,8 +40,15 @@ pub struct SharesInfo {
     pub workgroup: String,
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_network_shares() -> SharesInfo {
+pub async fn get_network_shares() -> SharesInfo {
+    tokio::task::spawn_blocking(get_network_shares_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_network_shares_blocking() -> SharesInfo {
     let ps = r#"
 $out = @{}
 

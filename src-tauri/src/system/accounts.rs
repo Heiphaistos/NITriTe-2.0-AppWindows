@@ -43,8 +43,17 @@ pub struct AccountsInfo {
     pub total_admin: u32,
 }
 
+// Anti-freeze : Get-LocalGroupMember/Get-LocalUser via PowerShell est bloquant
+// (subprocess synchrone) — jamais l'exécuter inline sur le thread de commande,
+// voir utils::wmi pour le même principe appliqué aux requêtes WMI.
 #[tauri::command]
-pub fn get_user_accounts() -> AccountsInfo {
+pub async fn get_user_accounts() -> AccountsInfo {
+    tokio::task::spawn_blocking(get_user_accounts_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_user_accounts_blocking() -> AccountsInfo {
     let ps = r#"
 # Sortie UTF-8 : noms/descriptions de comptes et groupes accentués (FR
 # « Administrateurs », « Compte d'utilisateur invité »…) seraient sinon mojibake.

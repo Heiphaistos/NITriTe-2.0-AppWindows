@@ -24,8 +24,16 @@ pub struct SysDriversData {
     pub error_count: u32,
 }
 
+// Anti-freeze : Get-WmiObject via PowerShell est bloquant — jamais inline sur
+// le thread de commande.
 #[tauri::command]
-pub fn get_sys_drivers_list() -> SysDriversData {
+pub async fn get_sys_drivers_list() -> SysDriversData {
+    tokio::task::spawn_blocking(get_sys_drivers_list_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_sys_drivers_list_blocking() -> SysDriversData {
     let ps = r#"
 # Sortie UTF-8 : les noms de périphériques/fabricants accentués (FR
 # « Périphérique système »…) seraient sinon mojibake côté Rust (from_utf8_lossy).
