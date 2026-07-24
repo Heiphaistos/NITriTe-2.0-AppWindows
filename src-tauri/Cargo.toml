@@ -29,7 +29,7 @@ tauri-plugin-opener = "2"
 
 # Systeme
 sysinfo = "0.39"
-wmi = "0.14"
+wmi = "0.18"
 winreg = "0.52"
 
 # Async — features minimaux, évite +200KB de code inutilisé
