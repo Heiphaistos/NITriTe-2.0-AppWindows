@@ -79,8 +79,15 @@ pub struct DriverInstallResult {
 }
 
 // ─── Récupération des périphériques hardware ───────────────────────────────────
+// Anti-freeze : PowerShell/WMI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_hardware_devices() -> Vec<HardwareDevice> {
+pub async fn get_hardware_devices() -> Vec<HardwareDevice> {
+    tokio::task::spawn_blocking(get_hardware_devices_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_hardware_devices_blocking() -> Vec<HardwareDevice> {
     let ps = r#"
 # Sortie UTF-8 : noms de périphériques/fabricants accentués (FR « Périphérique
 # système »…) seraient sinon mojibake côté Rust (from_utf8_lossy).
@@ -259,8 +266,16 @@ fn collect_inf_files(folder: &Path, max_files: usize) -> Vec<std::path::PathBuf>
 }
 
 // ─── Moteur de matching principal ─────────────────────────────────────────────
+// Anti-freeze : parcours de dossier + lecture jusqu'à 50k fichiers .inf,
+// bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn scan_driver_folder(folder_path: String, device_ids: Vec<String>) -> DriverScanResult {
+pub async fn scan_driver_folder(folder_path: String, device_ids: Vec<String>) -> DriverScanResult {
+    tokio::task::spawn_blocking(move || scan_driver_folder_blocking(folder_path, device_ids))
+        .await
+        .unwrap_or_default()
+}
+
+fn scan_driver_folder_blocking(folder_path: String, device_ids: Vec<String>) -> DriverScanResult {
     let start = std::time::Instant::now();
     let folder = Path::new(&folder_path);
 
@@ -372,8 +387,15 @@ fn strip_hw_id_rev(hw_id: &str) -> String {
 }
 
 // ─── Installation d'un driver via pnputil ─────────────────────────────────────
+// Anti-freeze : pnputil est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn install_driver(inf_path: String) -> DriverInstallResult {
+pub async fn install_driver(inf_path: String) -> DriverInstallResult {
+    tokio::task::spawn_blocking(move || install_driver_blocking(inf_path))
+        .await
+        .unwrap_or_default()
+}
+
+fn install_driver_blocking(inf_path: String) -> DriverInstallResult {
     let inf_clean = inf_path.replace('"', "");
     if !Path::new(&inf_clean).exists() {
         return DriverInstallResult { inf_path: inf_clean, success: false, output: "Fichier INF introuvable".to_string(), ..Default::default() };
@@ -405,8 +427,16 @@ pub fn install_driver(inf_path: String) -> DriverInstallResult {
 }
 
 // ─── Recherche de MAJ pilotes via Windows Update (WUA COM) ────────────────────
+// Anti-freeze : Windows Update COM/PowerShell est bloquant — jamais inline
+// sur le thread de commande.
 #[tauri::command]
-pub fn check_driver_updates_winupdate() -> WuDriverSummary {
+pub async fn check_driver_updates_winupdate() -> WuDriverSummary {
+    tokio::task::spawn_blocking(check_driver_updates_winupdate_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn check_driver_updates_winupdate_blocking() -> WuDriverSummary {
     let ps = r#"
 # Sortie UTF-8 : titres/modèles/fabricants de MAJ pilotes accentués (FR)
 # seraient sinon mojibake côté Rust (from_utf8_lossy).
@@ -479,8 +509,16 @@ try {
 }
 
 // ─── Installer une mise à jour pilote via Windows Update ───────────────────────
+// Anti-freeze : Windows Update COM/PowerShell est bloquant — jamais inline
+// sur le thread de commande.
 #[tauri::command]
-pub fn install_driver_winupdate(update_id: String) -> DriverInstallResult {
+pub async fn install_driver_winupdate(update_id: String) -> DriverInstallResult {
+    tokio::task::spawn_blocking(move || install_driver_winupdate_blocking(update_id))
+        .await
+        .unwrap_or_default()
+}
+
+fn install_driver_winupdate_blocking(update_id: String) -> DriverInstallResult {
     // Validate: WU update IDs are GUIDs (hex digits + hyphens only, max 36 chars)
     let uid = update_id.trim().to_string();
     if uid.is_empty() || uid.len() > 36 || !uid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
@@ -534,8 +572,16 @@ try {{
 }
 
 // ─── Installer TOUS les drivers en attente WU ─────────────────────────────────
+// Anti-freeze : Windows Update COM/PowerShell est bloquant — jamais inline
+// sur le thread de commande.
 #[tauri::command]
-pub fn install_all_driver_updates() -> DriverInstallResult {
+pub async fn install_all_driver_updates() -> DriverInstallResult {
+    tokio::task::spawn_blocking(install_all_driver_updates_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn install_all_driver_updates_blocking() -> DriverInstallResult {
     let ps = r#"
 try {
     $sess = New-Object -ComObject Microsoft.Update.Session
@@ -577,8 +623,15 @@ try {
 }
 
 // ─── Export liste hardware IDs pour debug ─────────────────────────────────────
+// Anti-freeze : PowerShell/WMI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_all_hardware_ids() -> Vec<String> {
+pub async fn get_all_hardware_ids() -> Vec<String> {
+    tokio::task::spawn_blocking(get_all_hardware_ids_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_all_hardware_ids_blocking() -> Vec<String> {
     let ps = r#"
 @(Get-WmiObject Win32_PnPEntity -EA SilentlyContinue | ForEach-Object {
     @($_.HardwareID | Where-Object { $_ })
