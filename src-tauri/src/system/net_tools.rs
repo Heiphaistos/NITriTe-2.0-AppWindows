@@ -73,8 +73,15 @@ pub struct HttpCheckResult {
 pub struct NetShareEntry { pub name: String, pub path: String, pub comment: String, pub host: String }
 
 // ─── Ping ──────────────────────────────────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn run_ping(host: String, count: u32) -> PingDiagResult {
+pub async fn run_ping(host: String, count: u32) -> PingDiagResult {
+    tokio::task::spawn_blocking(move || run_ping_blocking(host, count))
+        .await
+        .unwrap_or_default()
+}
+
+fn run_ping_blocking(host: String, count: u32) -> PingDiagResult {
     let count = count.clamp(1, 10);
     let h = match validate_host(&host) {
         Ok(h) => h,
@@ -101,8 +108,15 @@ pub fn run_ping(host: String, count: u32) -> PingDiagResult {
 }
 
 // ─── Traceroute ────────────────────────────────────────────────────────────────
+// Anti-freeze : tracert est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn run_traceroute(host: String) -> Vec<TracertHop> {
+pub async fn run_traceroute(host: String) -> Vec<TracertHop> {
+    tokio::task::spawn_blocking(move || run_traceroute_blocking(host))
+        .await
+        .unwrap_or_default()
+}
+
+fn run_traceroute_blocking(host: String) -> Vec<TracertHop> {
     let h = match validate_host(&host) {
         Ok(h) => h,
         Err(e) => { tracing::warn!("run_traceroute: {}", e); return vec![]; }
@@ -139,8 +153,15 @@ pub fn run_traceroute(host: String) -> Vec<TracertHop> {
 }
 
 // ─── DNS Lookup ────────────────────────────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn run_nslookup(host: String, record_type: String, dns_server: Option<String>) -> DnsResult {
+pub async fn run_nslookup(host: String, record_type: String, dns_server: Option<String>) -> DnsResult {
+    tokio::task::spawn_blocking(move || run_nslookup_blocking(host, record_type, dns_server))
+        .await
+        .unwrap_or_default()
+}
+
+fn run_nslookup_blocking(host: String, record_type: String, dns_server: Option<String>) -> DnsResult {
     let h = match validate_host(&host) {
         Ok(h) => h,
         Err(e) => { tracing::warn!("run_nslookup: {}", e); return DnsResult::default(); }
@@ -174,8 +195,15 @@ pub fn run_nslookup(host: String, record_type: String, dns_server: Option<String
 }
 
 // ─── IP Config ─────────────────────────────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_ip_config() -> Vec<IpConfigAdapter> {
+pub async fn get_ip_config() -> Vec<IpConfigAdapter> {
+    tokio::task::spawn_blocking(get_ip_config_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_ip_config_blocking() -> Vec<IpConfigAdapter> {
     let ps = r#"
 $OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $result = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
@@ -208,8 +236,15 @@ $result | ConvertTo-Json -Depth 4 -Compress
 }
 
 // ─── Table ARP ─────────────────────────────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_arp_table() -> Vec<ArpEntry> {
+pub async fn get_arp_table() -> Vec<ArpEntry> {
+    tokio::task::spawn_blocking(get_arp_table_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_arp_table_blocking() -> Vec<ArpEntry> {
     #[cfg(target_os = "windows")]
     {
         let o = Command::new("arp").args(["-a"]).creation_flags(0x08000000).output();
@@ -240,8 +275,15 @@ pub fn get_arp_table() -> Vec<ArpEntry> {
 }
 
 // ─── Table de routage ──────────────────────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_route_table() -> Vec<RouteEntry> {
+pub async fn get_route_table() -> Vec<RouteEntry> {
+    tokio::task::spawn_blocking(get_route_table_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_route_table_blocking() -> Vec<RouteEntry> {
     let ps = r#"
 @(Get-NetRoute -ErrorAction SilentlyContinue | ForEach-Object {
     @{ net=$_.DestinationPrefix; gw=[string]$_.NextHop; iface=[string]$_.InterfaceAlias; metric=[int]$_.RouteMetric }
@@ -269,8 +311,15 @@ pub fn get_route_table() -> Vec<RouteEntry> {
 }
 
 // ─── Scan de ports ─────────────────────────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn scan_ports(host: String, ports: Vec<u16>) -> Vec<PortScanResult> {
+pub async fn scan_ports(host: String, ports: Vec<u16>) -> Vec<PortScanResult> {
+    tokio::task::spawn_blocking(move || scan_ports_blocking(host, ports))
+        .await
+        .unwrap_or_default()
+}
+
+fn scan_ports_blocking(host: String, ports: Vec<u16>) -> Vec<PortScanResult> {
     let h = match validate_host(&host) {
         Ok(h) => h,
         Err(e) => { tracing::warn!("scan_ports: {}", e); return vec![]; }
@@ -325,8 +374,15 @@ fn known_service(port: u16) -> String {
 }
 
 // ─── Réseaux WiFi proches ──────────────────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_wifi_networks() -> Vec<WifiNetwork> {
+pub async fn get_wifi_networks() -> Vec<WifiNetwork> {
+    tokio::task::spawn_blocking(get_wifi_networks_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_wifi_networks_blocking() -> Vec<WifiNetwork> {
     #[cfg(target_os = "windows")]
     {
         let o = Command::new("netsh").args(["wlan","show","networks","mode=bssid"]).creation_flags(0x08000000).output();
@@ -365,8 +421,15 @@ pub fn get_wifi_networks() -> Vec<WifiNetwork> {
 }
 
 // ─── Ports ouverts locaux (netstat) ───────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_local_open_ports() -> Vec<OpenPort> {
+pub async fn get_local_open_ports() -> Vec<OpenPort> {
+    tokio::task::spawn_blocking(get_local_open_ports_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_local_open_ports_blocking() -> Vec<OpenPort> {
     let ps = r#"
 $procs = @{}; Get-Process | ForEach-Object { $procs[[string]$_.Id] = $_.ProcessName }
 @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
@@ -419,8 +482,15 @@ fn validate_http_url(url: &str) -> Result<String, String> {
 }
 
 // ─── Vérification HTTP/HTTPS ───────────────────────────────────────────────────
+// Anti-freeze : la requête HTTP est bloquante — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn check_http(url: String) -> HttpCheckResult {
+pub async fn check_http(url: String) -> HttpCheckResult {
+    tokio::task::spawn_blocking(move || check_http_blocking(url))
+        .await
+        .unwrap_or_default()
+}
+
+fn check_http_blocking(url: String) -> HttpCheckResult {
     let url_clean = match validate_http_url(&url) {
         Ok(u) => u,
         Err(e) => {
@@ -466,8 +536,15 @@ try {{
 }
 
 // ─── Partages réseau ───────────────────────────────────────────────────────────
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_net_shares(host: String) -> Vec<NetShareEntry> {
+pub async fn get_net_shares(host: String) -> Vec<NetShareEntry> {
+    tokio::task::spawn_blocking(move || get_net_shares_blocking(host))
+        .await
+        .unwrap_or_default()
+}
+
+fn get_net_shares_blocking(host: String) -> Vec<NetShareEntry> {
     let h = match validate_host(&host) {
         Ok(h) => h,
         Err(e) => { tracing::warn!("get_net_shares: {}", e); return vec![]; }
@@ -502,8 +579,15 @@ try {{
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct BandwidthResult { pub download_mbps: f64, pub latency_ms: f64, pub test_host: String, pub success: bool }
 
+// Anti-freeze : le test réseau est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn test_bandwidth() -> BandwidthResult {
+pub async fn test_bandwidth() -> BandwidthResult {
+    tokio::task::spawn_blocking(test_bandwidth_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn test_bandwidth_blocking() -> BandwidthResult {
     // Download 50MB from Cloudflare speed test server (accurate on high-speed connections)
     let ps = r#"
 try {
