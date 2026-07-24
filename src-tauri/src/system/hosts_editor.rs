@@ -14,8 +14,16 @@ pub struct HostsEntry {
 
 const HOSTS_PATH: &str = r"C:\Windows\System32\drivers\etc\hosts";
 
+// Anti-freeze : lecture fichier hosts + résolutions associées peuvent
+// bloquer — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_hosts_entries() -> Vec<HostsEntry> {
+pub async fn get_hosts_entries() -> Vec<HostsEntry> {
+    tokio::task::spawn_blocking(get_hosts_entries_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_hosts_entries_blocking() -> Vec<HostsEntry> {
     let content = match std::fs::read_to_string(HOSTS_PATH) {
         Ok(c) => c,
         Err(_) => {
@@ -77,8 +85,16 @@ pub fn get_hosts_entries() -> Vec<HostsEntry> {
     entries
 }
 
+// Anti-freeze : écriture fichier hosts est bloquante — jamais inline sur le
+// thread de commande.
 #[tauri::command]
-pub fn add_hosts_entry(ip: String, hostname: String, comment: String) -> Result<String, String> {
+pub async fn add_hosts_entry(ip: String, hostname: String, comment: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || add_hosts_entry_blocking(ip, hostname, comment))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn add_hosts_entry_blocking(ip: String, hostname: String, comment: String) -> Result<String, String> {
     // Suppression de tous les caractères de contrôle (newlines inclus) + guillemets
     fn clean(s: &str) -> String {
         s.chars().filter(|c| !c.is_control() && *c != '\'' && *c != '"').collect::<String>().trim().to_string()
@@ -138,8 +154,16 @@ pub fn add_hosts_entry(ip: String, hostname: String, comment: String) -> Result<
     Err("Non disponible".to_string())
 }
 
+// Anti-freeze : écriture fichier hosts est bloquante — jamais inline sur le
+// thread de commande.
 #[tauri::command]
-pub fn delete_hosts_entry(line_number: u32) -> Result<String, String> {
+pub async fn delete_hosts_entry(line_number: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || delete_hosts_entry_blocking(line_number))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn delete_hosts_entry_blocking(line_number: u32) -> Result<String, String> {
     if line_number == 0 {
         return Err("Numéro de ligne invalide".to_string());
     }
@@ -172,8 +196,16 @@ $new | Set-Content '{}' -Encoding UTF8
     Err("Non disponible".to_string())
 }
 
+// Anti-freeze : écriture fichier hosts est bloquante — jamais inline sur le
+// thread de commande.
 #[tauri::command]
-pub fn toggle_hosts_entry(line_number: u32, enable: bool) -> Result<String, String> {
+pub async fn toggle_hosts_entry(line_number: u32, enable: bool) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || toggle_hosts_entry_blocking(line_number, enable))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn toggle_hosts_entry_blocking(line_number: u32, enable: bool) -> Result<String, String> {
     if line_number == 0 {
         return Err("Numéro de ligne invalide".to_string());
     }
@@ -211,19 +243,40 @@ if ($idx -ge 0 -and $idx -lt $lines.Count) {{
     Err("Non disponible".to_string())
 }
 
+// Anti-freeze : I/O fichier — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn backup_hosts() -> Result<String, String> {
+pub async fn backup_hosts() -> Result<String, String> {
+    tokio::task::spawn_blocking(backup_hosts_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn backup_hosts_blocking() -> Result<String, String> {
     let backup = format!("{}.bak", HOSTS_PATH);
     std::fs::copy(HOSTS_PATH, &backup).map(|_| format!("Sauvegarde : {}", backup)).map_err(|e| e.to_string())
 }
 
+// Anti-freeze : I/O fichier — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_hosts_raw() -> String {
+pub async fn get_hosts_raw() -> String {
+    tokio::task::spawn_blocking(get_hosts_raw_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_hosts_raw_blocking() -> String {
     std::fs::read_to_string(HOSTS_PATH).unwrap_or_default()
 }
 
+// Anti-freeze : résolution DNS est bloquante — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn resolve_hostname(hostname: String) -> Result<String, String> {
+pub async fn resolve_hostname(hostname: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || resolve_hostname_blocking(hostname))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn resolve_hostname_blocking(hostname: String) -> Result<String, String> {
     use std::net::ToSocketAddrs;
     let addr = format!("{}:80", hostname.trim());
     match addr.to_socket_addrs() {
