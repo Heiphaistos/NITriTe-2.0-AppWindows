@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::process::Command;
-use wmi::{COMLibrary, WMIConnection};
+use wmi::WMIConnection;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -24,8 +24,7 @@ pub struct VolumeInfo {
 }
 
 fn wmi_con() -> Result<WMIConnection, String> {
-    let com = COMLibrary::new().map_err(|e| format!("COM: {}", e))?;
-    WMIConnection::new(com).map_err(|e| format!("WMI: {}", e))
+    WMIConnection::new().map_err(|e| format!("WMI: {}", e))
 }
 
 pub fn collect_volumes() -> Result<Vec<VolumeInfo>, String> {

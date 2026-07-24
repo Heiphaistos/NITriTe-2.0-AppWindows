@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::process::Command;
-use wmi::{COMLibrary, WMIConnection};
+use wmi::WMIConnection;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -66,8 +66,7 @@ struct Win32Battery {
 // === BIOS ===
 
 pub fn get_bios_info() -> Result<BiosInfo, NiTriTeError> {
-    let com = COMLibrary::new().map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
-    let wmi = WMIConnection::new(com).map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
+    let wmi = WMIConnection::new().map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
 
     let results: Vec<Win32Bios> = wmi.raw_query("SELECT * FROM Win32_BIOS").map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
     let bios = results
@@ -116,8 +115,7 @@ fn parse_wmi_date(s: &str) -> String {
 // === Battery ===
 
 pub fn get_battery_extended() -> Result<Option<BatteryInfo>, NiTriTeError> {
-    let com = COMLibrary::new().map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
-    let wmi = WMIConnection::new(com).map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
+    let wmi = WMIConnection::new().map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
 
     let results: Vec<Win32Battery> = wmi.raw_query("SELECT * FROM Win32_Battery").map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
     let bat = match results.into_iter().next() {

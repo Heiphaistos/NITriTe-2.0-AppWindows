@@ -1,5 +1,5 @@
 use serde::Serialize;
-use wmi::{COMLibrary, WMIConnection};
+use wmi::WMIConnection;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ServiceInfo {
@@ -31,8 +31,7 @@ struct WmiService {
 }
 
 fn wmi_con() -> Result<WMIConnection, String> {
-    let com = COMLibrary::new().map_err(|e| format!("COM: {}", e))?;
-    WMIConnection::new(com).map_err(|e| format!("WMI: {}", e))
+    WMIConnection::new().map_err(|e| format!("WMI: {}", e))
 }
 
 pub fn collect_services() -> Result<Vec<ServiceInfo>, String> {

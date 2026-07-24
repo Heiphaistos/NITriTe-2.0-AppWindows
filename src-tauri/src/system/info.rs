@@ -1,6 +1,6 @@
 use serde::Serialize;
 use sysinfo::{Disks, System};
-use wmi::{COMLibrary, WMIConnection};
+use wmi::WMIConnection;
 use std::collections::HashMap;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -261,8 +261,7 @@ fn detect_interface(model: &str, pnp_id: &str, wmi_interface: &str) -> String {
 // === Collection ===
 
 pub fn collect_system_info() -> Result<SystemInfo, NiTriTeError> {
-    let com = COMLibrary::new().map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
-    let wmi = WMIConnection::new(com).map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
+    let wmi = WMIConnection::new().map_err(|e| NiTriTeError::Wmi(e.to_string()))?;
 
     let os = collect_os_info();
     let cpu = collect_cpu_info(&wmi)?;
