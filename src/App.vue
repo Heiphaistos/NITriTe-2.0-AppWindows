@@ -54,6 +54,11 @@ const searchOpen       = ref(false);
 const shortcutsOpen    = ref(false);
 const appReady         = ref(false);
 
+// Vidéo de fond du splash : une fois terminée (elle ne boucle pas), on la
+// démonte et on affiche sa dernière frame en image statique — évite de
+// garder un <video> arrêté en mémoire si le chargement traîne encore.
+const splashVideoEnded = ref(false);
+
 // ── Preloader ──────────────────────────────────────────────────────────────────
 interface LoadTask { label: string; status: "pending" | "running" | "done" | "error" }
 
@@ -227,6 +232,26 @@ onMounted(async () => {
   <Transition name="splash">
     <div v-if="!appReady" class="splash-screen">
 
+      <!-- ── Fond vidéo (sans son) — se fige sur la dernière image si le
+           chargement dure plus longtemps que la vidéo ── -->
+      <video
+        v-if="!splashVideoEnded"
+        class="splash-bg-media"
+        src="/splash.mp4"
+        autoplay
+        muted
+        playsinline
+        disablepictureinpicture
+        preload="auto"
+        @ended="splashVideoEnded = true"
+      />
+      <img
+        v-else
+        src="/splash-last-frame.jpg"
+        class="splash-bg-media"
+        alt=""
+      />
+
       <!-- ── Fond statique ── -->
       <div class="splash-overlay" />
 
@@ -355,10 +380,20 @@ onMounted(async () => {
   background: #09090b; overflow: hidden;
 }
 
-/* Overlay fond statique — dégradé radial subtil sur fond noir */
+/* Vidéo/image de fond — plein écran, sous l'overlay et le contenu */
+.splash-bg-media {
+  position: absolute; inset: 0; z-index: 0;
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: center;
+  pointer-events: none;
+}
+
+/* Overlay — assombrit la vidéo pour garder le texte lisible, glow orange au centre */
 .splash-overlay {
-  position: absolute; inset: 0;
-  background: radial-gradient(ellipse at 50% 30%, rgba(249,115,22,0.08) 0%, transparent 60%);
+  position: absolute; inset: 0; z-index: 1;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(249,115,22,0.10) 0%, transparent 60%),
+    linear-gradient(to bottom, rgba(9,9,11,0.45) 0%, rgba(9,9,11,0.55) 45%, rgba(9,9,11,0.92) 100%);
   pointer-events: none;
 }
 
@@ -366,6 +401,7 @@ onMounted(async () => {
    tourne en boucle tant que appReady est faux ; petit salut final a l'arrivee ── */
 .splash-mascot-stage {
   position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%);
+  z-index: 2;
   display: flex; flex-direction: column; align-items: center; gap: 18px;
   perspective: 800px;
 }
@@ -411,6 +447,7 @@ onMounted(async () => {
 /* ── Panel chargement (bas de l'écran) ── */
 .splash-content {
   position: absolute; bottom: 0; left: 0; right: 0;
+  z-index: 2;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   padding: 24px 32px 32px;
   animation: splash-in 400ms ease forwards;
