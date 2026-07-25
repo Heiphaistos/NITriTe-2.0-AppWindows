@@ -446,6 +446,10 @@ onMounted(() => {
         </div>
       </template>
       <div v-if="recommendedLoading" class="loading-state"><NSpinner :size="24" /><p>Detection...</p></div>
+      <div v-else-if="recommendedCategories.size === 0" class="empty-state">
+        <Download :size="28" style="opacity:.25" />
+        <p>Aucun pilote recommande pour cette machine</p>
+      </div>
       <div v-else class="rec-drivers">
         <div v-for="[cat, items] in recommendedCategories" :key="cat" class="rec-category">
           <h4 class="rec-cat-title">{{ cat }}</h4>
@@ -634,6 +638,8 @@ onMounted(() => {
   padding: 60px;
   color: var(--text-muted);
 }
+
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 30px; color: var(--text-muted); font-size: 13px; }
 
 .table-wrapper {
   overflow-x: auto;
