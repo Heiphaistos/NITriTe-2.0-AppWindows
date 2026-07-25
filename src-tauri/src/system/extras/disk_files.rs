@@ -68,8 +68,15 @@ pub struct BigFile {
     pub modified: String,
 }
 
+// Anti-freeze : parcours disque est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_big_files(path: String, count: u32, excluded_folders: Option<Vec<String>>) -> Result<Vec<BigFile>, String> {
+pub async fn get_big_files(path: String, count: u32, excluded_folders: Option<Vec<String>>) -> Result<Vec<BigFile>, String> {
+    tokio::task::spawn_blocking(move || get_big_files_blocking(path, count, excluded_folders))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_big_files_blocking(path: String, count: u32, excluded_folders: Option<Vec<String>>) -> Result<Vec<BigFile>, String> {
     let n = count.min(200);
     let exclusions = excluded_folders.unwrap_or_default();
     let exclude_filter = if exclusions.is_empty() {
@@ -223,8 +230,16 @@ fn is_system_path_blocked(canonical: &std::path::Path) -> bool {
     blocked.iter().any(|prefix| path_lower.starts_with(prefix))
 }
 
+// Anti-freeze : I/O fichier (canonicalize+remove) est bloquant — jamais
+// inline sur le thread de commande.
 #[tauri::command]
-pub fn delete_file(path: String) -> Result<(), String> {
+pub async fn delete_file(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || delete_file_blocking(path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn delete_file_blocking(path: String) -> Result<(), String> {
     // Canonicalize first to resolve ".." traversal before checking blocked prefixes.
     let canonical = std::fs::canonicalize(&path)
         .map_err(|e| format!("Chemin inaccessible {}: {}", path, e))?;
@@ -234,8 +249,15 @@ pub fn delete_file(path: String) -> Result<(), String> {
     std::fs::remove_file(&canonical).map_err(|e| format!("{}: {}", canonical.display(), e))
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn trash_file(path: String) -> Result<(), String> {
+pub async fn trash_file(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || trash_file_blocking(path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn trash_file_blocking(path: String) -> Result<(), String> {
     let safe = path.replace('\'', "''");
     let script = format!(r#"
 Add-Type -AssemblyName Microsoft.VisualBasic
@@ -258,8 +280,15 @@ pub struct BrowserCacheInfo {
     pub exists: bool,
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_browser_cache_info() -> Result<Vec<BrowserCacheInfo>, String> {
+pub async fn get_browser_cache_info() -> Result<Vec<BrowserCacheInfo>, String> {
+    tokio::task::spawn_blocking(get_browser_cache_info_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_browser_cache_info_blocking() -> Result<Vec<BrowserCacheInfo>, String> {
     let script = r#"
 $localApp = [Environment]::GetFolderPath('LocalApplicationData')
 $roaming   = [Environment]::GetFolderPath('ApplicationData')
@@ -292,8 +321,16 @@ $result | ConvertTo-Json -Compress"#;
     }).collect())
 }
 
+// Anti-freeze : PowerShell (suppression cache) est bloquant — jamais
+// inline sur le thread de commande.
 #[tauri::command]
-pub fn clean_browser_cache_path(browser_path: String) -> Result<f64, String> {
+pub async fn clean_browser_cache_path(browser_path: String) -> Result<f64, String> {
+    tokio::task::spawn_blocking(move || clean_browser_cache_path_blocking(browser_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn clean_browser_cache_path_blocking(browser_path: String) -> Result<f64, String> {
     if browser_path.is_empty() || browser_path.contains("..") {
         return Err("Chemin invalide".to_string());
     }
