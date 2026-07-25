@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, provide, onMounted, onUnmounted, onErrorCaptured, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import logoUrl from "@/assets/nitrite-mascot.png";
 import AppSidebar from "@/components/layout/AppSidebar.vue";
 import AppHeader from "@/components/layout/AppHeader.vue";
 import AppStatusBar from "@/components/layout/AppStatusBar.vue";
@@ -255,14 +254,6 @@ onMounted(async () => {
       <!-- ── Fond statique ── -->
       <div class="splash-overlay" />
 
-      <!-- ── Mascotte flottante (pseudo-3D) — attend la fin du chargement ── -->
-      <div class="splash-mascot-stage" :class="{ 'is-ready': appReady }">
-        <div class="splash-mascot-orbit">
-          <img :src="logoUrl" class="splash-mascot" alt="Nitrite" />
-        </div>
-        <div class="splash-mascot-shadow" />
-      </div>
-
       <!-- ── Panel de chargement (bas de l'écran) ── -->
       <div class="splash-content">
 
@@ -397,52 +388,6 @@ onMounted(async () => {
   pointer-events: none;
 }
 
-/* ── Mascotte flottante — pseudo-3D (perspective + rotation + ombre synchronisée),
-   tourne en boucle tant que appReady est faux ; petit salut final a l'arrivee ── */
-.splash-mascot-stage {
-  position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%);
-  z-index: 2;
-  display: flex; flex-direction: column; align-items: center; gap: 18px;
-  perspective: 800px;
-}
-.splash-mascot-orbit {
-  transform-style: preserve-3d;
-  /* !important : le mascotte est une boucle decorative discrete (flottement
-     lent, faible amplitude) — sans ça la regle globale "reduire les
-     animations" (animations.css, elle-meme en !important) l'ecrasait a
-     0.01ms des le premier essai reel, la figeant en plein milieu de l'ecran
-     de demarrage comme un simple logo colle. Le reste de l'app continue de
-     respecter la preference d'accessibilite normalement. */
-  animation: mascot-float 3.2s ease-in-out infinite !important;
-}
-.splash-mascot-stage.is-ready .splash-mascot-orbit {
-  animation: mascot-greet 600ms ease-out 1 !important;
-}
-.splash-mascot {
-  width: 160px; height: 160px; object-fit: contain;
-  filter: drop-shadow(0 18px 20px rgba(0,0,0,0.45));
-}
-.splash-mascot-shadow {
-  width: 90px; height: 16px; border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(249,115,22,0.45) 0%, transparent 70%);
-  animation: mascot-shadow 3.2s ease-in-out infinite !important;
-}
-.splash-mascot-stage.is-ready .splash-mascot-shadow { animation: none !important; opacity: 0.35; }
-
-@keyframes mascot-float {
-  0%, 100% { transform: translateY(0) rotateY(-10deg) rotateZ(-2deg); }
-  50%      { transform: translateY(-18px) rotateY(10deg) rotateZ(2deg); }
-}
-@keyframes mascot-shadow {
-  0%, 100% { transform: scale(1);    opacity: 0.45; }
-  50%      { transform: scale(0.75); opacity: 0.25; }
-}
-@keyframes mascot-greet {
-  0%   { transform: translateY(-18px) rotateY(10deg) scale(1); }
-  40%  { transform: translateY(-28px) rotateY(-14deg) scale(1.08); }
-  70%  { transform: translateY(0)     rotateY(8deg)   scale(1); }
-  100% { transform: translateY(0)     rotateY(0deg)   scale(1); }
-}
 
 /* ── Panel chargement (bas de l'écran) ── */
 .splash-content {
