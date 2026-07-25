@@ -259,6 +259,9 @@ const runningCount = computed(() => props.services.filter(s => s.state === "Runn
                 </div>
               </td>
             </tr>
+            <tr v-if="!filteredProcs.length">
+              <td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;font-size:13px">Aucun processus ne correspond à la recherche</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -335,6 +338,9 @@ const runningCount = computed(() => props.services.filter(s => s.state === "Runn
                   </button>
                 </div>
               </td>
+            </tr>
+            <tr v-if="!filteredSvcs.length">
+              <td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;font-size:13px">Aucun service ne correspond à la recherche</td>
             </tr>
           </tbody>
         </table>
@@ -422,6 +428,9 @@ const runningCount = computed(() => props.services.filter(s => s.state === "Runn
                   </button>
                 </div>
               </td>
+            </tr>
+            <tr v-if="!filteredTasks.length">
+              <td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;font-size:13px">Aucune tâche ne correspond à la recherche</td>
             </tr>
           </tbody>
         </table>
