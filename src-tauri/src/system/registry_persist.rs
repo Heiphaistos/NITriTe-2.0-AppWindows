@@ -25,8 +25,15 @@ pub struct RegistryPersistence {
     pub total_suspicious: u32,
 }
 
+// Anti-freeze : parcours registre est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_registry_persistence() -> RegistryPersistence {
+pub async fn get_registry_persistence() -> RegistryPersistence {
+    tokio::task::spawn_blocking(get_registry_persistence_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_registry_persistence_blocking() -> RegistryPersistence {
     let ps = r#"
 $out = @{}
 $safe = @('Windows','System32','SysWOW64','Program Files','Microsoft','MsEdge','OneDrive')
@@ -181,8 +188,15 @@ pub struct RegValue {
     pub data: String,
 }
 
+// Anti-freeze : accès registre est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn registry_browse(path: String) -> RegBrowseResult {
+pub async fn registry_browse(path: String) -> RegBrowseResult {
+    tokio::task::spawn_blocking(move || registry_browse_blocking(path))
+        .await
+        .unwrap_or_default()
+}
+
+fn registry_browse_blocking(path: String) -> RegBrowseResult {
     let ps = format!(
         r#"
 $ErrorActionPreference = 'Stop'
@@ -234,8 +248,15 @@ try {{
     RegBrowseResult { path: path.clone(), error: Some("Accès refusé ou chemin invalide".to_string()), ..Default::default() }
 }
 
+// Anti-freeze : écriture registre est bloquante — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn registry_set_value(path: String, name: String, data: String) -> Result<String, String> {
+pub async fn registry_set_value(path: String, name: String, data: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || registry_set_value_blocking(path, name, data))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn registry_set_value_blocking(path: String, name: String, data: String) -> Result<String, String> {
     let real_name = if name == "(Default)" { "" } else { &name };
     let ps = format!(
         r#"Set-ItemProperty -LiteralPath 'Registry::{}' -Name '{}' -Value '{}' -ErrorAction Stop; 'OK'"#,
@@ -252,8 +273,15 @@ pub fn registry_set_value(path: String, name: String, data: String) -> Result<St
     else { Err(crate::maintenance::commands::decode_output(&out.stderr).trim().to_string()) }
 }
 
+// Anti-freeze : écriture registre est bloquante — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn registry_delete_value(path: String, name: String) -> Result<String, String> {
+pub async fn registry_delete_value(path: String, name: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || registry_delete_value_blocking(path, name))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn registry_delete_value_blocking(path: String, name: String) -> Result<String, String> {
     let ps = format!(
         r#"Remove-ItemProperty -LiteralPath 'Registry::{}' -Name '{}' -ErrorAction Stop; 'OK'"#,
         path.replace('\'', "''"),

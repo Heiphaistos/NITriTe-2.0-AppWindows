@@ -6,8 +6,16 @@ use super::{parse_json_arr, ps};
 
 // ─── Security Quick Actions ───────────────────────────────────────────────────
 
+// Anti-freeze : PowerShell/Set-MpPreference est bloquant — jamais inline
+// sur le thread de commande.
 #[tauri::command]
-pub fn toggle_defender_realtime(enable: bool) -> Result<String, String> {
+pub async fn toggle_defender_realtime(enable: bool) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || toggle_defender_realtime_blocking(enable))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn toggle_defender_realtime_blocking(enable: bool) -> Result<String, String> {
     let val = if enable { "$false" } else { "$true" };
     // -ErrorAction Stop + try/catch : Set-MpPreference est routinièrement bloqué
     // par la Tamper Protection de Defender (erreur non-terminante). Sans ça, le
@@ -25,13 +33,27 @@ pub fn toggle_defender_realtime(enable: bool) -> Result<String, String> {
     }
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn update_defender_signatures() -> Result<String, String> {
+pub async fn update_defender_signatures() -> Result<String, String> {
+    tokio::task::spawn_blocking(update_defender_signatures_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn update_defender_signatures_blocking() -> Result<String, String> {
     ps("Update-MpSignature -ErrorAction Stop; 'Définitions mises à jour'")
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn enable_firewall_all_profiles() -> Result<String, String> {
+pub async fn enable_firewall_all_profiles() -> Result<String, String> {
+    tokio::task::spawn_blocking(enable_firewall_all_profiles_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn enable_firewall_all_profiles_blocking() -> Result<String, String> {
     let out = std::process::Command::new("netsh")
         .args(["advfirewall", "set", "allprofiles", "state", "on"])
         .creation_flags(0x08000000)
@@ -43,8 +65,15 @@ pub fn enable_firewall_all_profiles() -> Result<String, String> {
 
 // ─── Software Uninstall (quick) ───────────────────────────────────────────────
 
+// Anti-freeze : PowerShell/winget est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn quick_uninstall_software(name: String) -> Result<String, String> {
+pub async fn quick_uninstall_software(name: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || quick_uninstall_software_blocking(name))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn quick_uninstall_software_blocking(name: String) -> Result<String, String> {
     let safe = name.replace('\'', "''");
     let script = format!(r#"
 $paths = @(
@@ -77,8 +106,16 @@ pub struct ProductKey {
     pub key_type: String,
 }
 
+// Anti-freeze : requêtes registre/WMI sont bloquantes — jamais inline sur
+// le thread de commande.
 #[tauri::command]
-pub fn get_all_product_keys() -> Result<Vec<ProductKey>, String> {
+pub async fn get_all_product_keys() -> Result<Vec<ProductKey>, String> {
+    tokio::task::spawn_blocking(get_all_product_keys_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_all_product_keys_blocking() -> Result<Vec<ProductKey>, String> {
     let script = r#"
 function Decode-DigitalProductId($dpid) {
     if (-not $dpid -or $dpid.Length -lt 67) { return $null }
@@ -184,8 +221,15 @@ pub struct ProblemDevice {
     pub status: String,
 }
 
+// Anti-freeze : WMI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_problem_devices() -> Result<Vec<ProblemDevice>, String> {
+pub async fn get_problem_devices() -> Result<Vec<ProblemDevice>, String> {
+    tokio::task::spawn_blocking(get_problem_devices_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_problem_devices_blocking() -> Result<Vec<ProblemDevice>, String> {
     let script = r#"
 $errDesc = @{
     1='Non configuré correctement'; 2='Impossible de charger le pilote'; 3='Pilote corrompu';
