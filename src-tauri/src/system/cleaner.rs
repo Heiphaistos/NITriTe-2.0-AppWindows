@@ -45,8 +45,16 @@ fn ps_run(ps: &str) -> Option<serde_json::Value> {
     None
 }
 
+// Anti-freeze : PowerShell (calcul tailles dossiers) est bloquant —
+// jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_clean_targets() -> Vec<CleanTarget> {
+pub async fn get_clean_targets() -> Vec<CleanTarget> {
+    tokio::task::spawn_blocking(get_clean_targets_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_clean_targets_blocking() -> Vec<CleanTarget> {
     let ps = r#"
 $items = @(
     @{ name='%TEMP%'; path=$env:TEMP; cat='Temp' },
@@ -228,8 +236,15 @@ fn clean_target_blocking(target_name: String) -> CleanResult {
 }
 
 /// Quarantine: move files to %LOCALAPPDATA%\NiTriTe\quarantine\ instead of deleting
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn quarantine_target(target_name: String) -> CleanResult {
+pub async fn quarantine_target(target_name: String) -> CleanResult {
+    tokio::task::spawn_blocking(move || quarantine_target_blocking(target_name))
+        .await
+        .unwrap_or_default()
+}
+
+fn quarantine_target_blocking(target_name: String) -> CleanResult {
     let src_ps = match target_name.as_str() {
         "%TEMP%"        => "$env:TEMP".to_string(),
         "Windows\\Temp" => "'C:\\Windows\\Temp'".to_string(),
@@ -266,8 +281,15 @@ if (Test-Path $src) {{
 }
 
 /// List quarantine entries
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn list_quarantine() -> Vec<serde_json::Value> {
+pub async fn list_quarantine() -> Vec<serde_json::Value> {
+    tokio::task::spawn_blocking(list_quarantine_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn list_quarantine_blocking() -> Vec<serde_json::Value> {
     let ps = r#"
 $qBase = "$env:LOCALAPPDATA\NiTriTe\quarantine"
 if (!(Test-Path $qBase)) { @() | ConvertTo-Json -Compress; return }
@@ -284,8 +306,15 @@ if (!(Test-Path $qBase)) { @() | ConvertTo-Json -Compress; return }
 }
 
 /// Clear quarantine (permanently delete quarantine folder contents)
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn clear_quarantine(entry_name: Option<String>) -> bool {
+pub async fn clear_quarantine(entry_name: Option<String>) -> bool {
+    tokio::task::spawn_blocking(move || clear_quarantine_blocking(entry_name))
+        .await
+        .unwrap_or_default()
+}
+
+fn clear_quarantine_blocking(entry_name: Option<String>) -> bool {
     let ps = if let Some(name) = entry_name {
         // Whitelist stricte : alphanum, espace, tiret, underscore, point uniquement
         let safe: String = name.chars().map(|c| {
@@ -370,7 +399,7 @@ mod tests {
 
     #[test]
     fn quarantine_target_unknown_returns_failure() {
-        let r = quarantine_target("inject; rm -rf /".to_string());
+        let r = quarantine_target_blocking("inject; rm -rf /".to_string());
         assert!(!r.success);
         assert!(r.message.contains("non support"));
     }
