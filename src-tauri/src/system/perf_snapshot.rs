@@ -34,8 +34,15 @@ pub struct PerfSnapshot {
     pub uptime_hours: f64,
 }
 
+// Anti-freeze : WMI est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_perf_snapshot() -> PerfSnapshot {
+pub async fn get_perf_snapshot() -> PerfSnapshot {
+    tokio::task::spawn_blocking(get_perf_snapshot_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_perf_snapshot_blocking() -> PerfSnapshot {
     let ps = r#"
 $out = @{}
 

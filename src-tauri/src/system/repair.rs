@@ -22,8 +22,15 @@ pub struct RepairResult {
     pub duration_secs: u64,
 }
 
+// Anti-freeze : DISM/SFC log est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn check_system_health() -> SystemHealthStatus {
+pub async fn check_system_health() -> SystemHealthStatus {
+    tokio::task::spawn_blocking(check_system_health_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn check_system_health_blocking() -> SystemHealthStatus {
     let ps = r#"
 $out = @{}
 try {

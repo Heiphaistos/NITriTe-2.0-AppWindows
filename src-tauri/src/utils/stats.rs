@@ -36,14 +36,29 @@ fn save_stats(stats: &AppStats) -> Result<(), String> {
 }
 
 /// Retourne les statistiques d'utilisation
+// Anti-freeze : I/O fichier (load_stats) est bloquant — jamais inline
+// sur le thread de commande.
 #[tauri::command]
-pub fn get_app_stats() -> AppStats {
+pub async fn get_app_stats() -> AppStats {
+    tokio::task::spawn_blocking(get_app_stats_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_app_stats_blocking() -> AppStats {
     load_stats()
 }
 
 /// Incrémente un compteur nommé
+// Anti-freeze : I/O fichier est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn log_action(action: String) -> Result<(), String> {
+pub async fn log_action(action: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || log_action_blocking(action))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn log_action_blocking(action: String) -> Result<(), String> {
     let mut stats = load_stats();
     let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
     stats.last_action = now;
@@ -64,8 +79,15 @@ pub fn log_action(action: String) -> Result<(), String> {
 }
 
 /// Remet les statistiques à zéro
+// Anti-freeze : I/O fichier est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn reset_stats() -> Result<(), String> {
+pub async fn reset_stats() -> Result<(), String> {
+    tokio::task::spawn_blocking(reset_stats_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn reset_stats_blocking() -> Result<(), String> {
     save_stats(&AppStats::default())
 }
 

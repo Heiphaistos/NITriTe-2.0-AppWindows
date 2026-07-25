@@ -40,8 +40,16 @@ pub struct SystemHistory {
     pub recent_critical: Vec<RecentEvent>,
 }
 
+// Anti-freeze : PowerShell/registre est bloquant — jamais inline sur le
+// thread de commande.
 #[tauri::command]
-pub fn get_system_history() -> SystemHistory {
+pub async fn get_system_history() -> SystemHistory {
+    tokio::task::spawn_blocking(get_system_history_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn get_system_history_blocking() -> SystemHistory {
     let ps = r#"
 # Sortie UTF-8 : messages d'événements et libellés FR accentués (« Critique »,
 # « Erreur », texte des événements) seraient sinon mojibake (from_utf8_lossy).
