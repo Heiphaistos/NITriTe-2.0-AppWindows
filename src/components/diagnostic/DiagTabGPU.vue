@@ -107,7 +107,7 @@ function openDxDiag() {
       </NButton>
     </div>
 
-    <div v-if="!gpuList.length" class="diag-loading"><div class="diag-spinner"></div> Aucun GPU détecté...</div>
+    <div v-if="!gpuList.length" class="diag-loading">Aucun GPU détecté</div>
     <template v-else>
       <p class="diag-section-label">Carte(s) graphique(s) — {{ gpuList.length }} détectée(s)</p>
       <div v-for="(g, i) in gpuList" :key="i" class="card-block">

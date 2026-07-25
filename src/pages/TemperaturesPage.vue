@@ -359,9 +359,13 @@ h1 { font-size: 22px; font-weight: 700; }
 
 /* Info rows (fans, clocks, voltages) */
 .info-rows { display: flex; flex-direction: column; gap: 0; }
-.info-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.info-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
 .info-row:last-child { border-bottom: none; }
-.mono { font-family: "JetBrains Mono", monospace; color: var(--text-secondary); }
+/* Noms de capteurs LibreHardwareMonitor parfois très longs — tronquer au
+   lieu de déborder (flex-basis:auto par défaut refuse de rétrécir sous la
+   largeur du contenu, sans min-width:0 le texte pousse hors du conteneur). */
+.info-row span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono { font-family: "JetBrains Mono", monospace; color: var(--text-secondary); flex-shrink: 0; }
 
 .muted { color: var(--text-muted); }
 .update-footer { font-size: 11px; text-align: center; padding: 8px 0; }
