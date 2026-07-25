@@ -318,8 +318,16 @@ pub struct WifiNetwork {
     pub radio_type: String,
 }
 
+// Anti-freeze : scan WiFi via PowerShell est bloquant — jamais inline sur
+// le thread de commande.
 #[tauri::command]
-pub fn get_nearby_wifi() -> Result<Vec<WifiNetwork>, String> {
+pub async fn get_nearby_wifi() -> Result<Vec<WifiNetwork>, String> {
+    tokio::task::spawn_blocking(get_nearby_wifi_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_nearby_wifi_blocking() -> Result<Vec<WifiNetwork>, String> {
     let out = std::process::Command::new("netsh")
         .args(["wlan", "show", "networks", "mode=bssid"])
         .creation_flags(0x08000000)

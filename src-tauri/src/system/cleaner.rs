@@ -181,8 +181,16 @@ if($path -and (Test-Path $path)){{
     }).await.ok();
 }
 
+// Anti-freeze : nettoyage (fichiers/registre) est bloquant — jamais inline
+// sur le thread de commande.
 #[tauri::command]
-pub fn clean_target(target_name: String) -> CleanResult {
+pub async fn clean_target(target_name: String) -> CleanResult {
+    tokio::task::spawn_blocking(move || clean_target_blocking(target_name))
+        .await
+        .unwrap_or_default()
+}
+
+fn clean_target_blocking(target_name: String) -> CleanResult {
     // ok= reflétait un $true codé en dur : Remove-Item -EA SilentlyContinue avalait
     // toute erreur (fichier verrouillé, permissions) sans jamais faire échouer le
     // rapport. Désormais chaque suppression est comptée en succès/échec réel
@@ -349,14 +357,14 @@ mod tests {
 
     #[test]
     fn clean_target_unknown_returns_failure() {
-        let r = clean_target("../../etc/passwd".to_string());
+        let r = clean_target_blocking("../../etc/passwd".to_string());
         assert!(!r.success);
         assert!(r.message.contains("inconnue"));
     }
 
     #[test]
     fn clean_target_empty_returns_failure() {
-        let r = clean_target(String::new());
+        let r = clean_target_blocking(String::new());
         assert!(!r.success);
     }
 

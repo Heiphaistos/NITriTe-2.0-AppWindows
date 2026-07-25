@@ -312,8 +312,16 @@ fn timeout_for_repair(repair_type: &str) -> u64 {
     }
 }
 
+// Anti-freeze : SFC/DISM sont des commandes longues et bloquantes — jamais
+// inline sur le thread de commande.
 #[tauri::command]
-pub fn run_repair_command(repair_type: String) -> RepairResult {
+pub async fn run_repair_command(repair_type: String) -> RepairResult {
+    tokio::task::spawn_blocking(move || run_repair_command_blocking(repair_type))
+        .await
+        .unwrap_or_default()
+}
+
+fn run_repair_command_blocking(repair_type: String) -> RepairResult {
     let Some((label, cmd)) = repair_cmd_and_label(&repair_type) else {
         tracing::warn!("run_repair_command: type inconnu '{}'", repair_type);
         return RepairResult {
@@ -429,7 +437,7 @@ mod tests {
 
     #[test]
     fn run_repair_unknown_returns_failure() {
-        let result = run_repair_command("injected_command".to_string());
+        let result = run_repair_command_blocking("injected_command".to_string());
         assert!(!result.success);
         assert!(result.output.contains("inconnu"));
     }

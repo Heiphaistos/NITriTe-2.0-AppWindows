@@ -166,8 +166,15 @@ try {
     BluetoothReport { error: "Erreur lecture Bluetooth".to_string(), ..Default::default() }
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn toggle_bluetooth(enable: bool) -> Result<String, String> {
+pub async fn toggle_bluetooth(enable: bool) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || toggle_bluetooth_blocking(enable))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn toggle_bluetooth_blocking(enable: bool) -> Result<String, String> {
     // L'ancienne version mettait -EA SilentlyContinue sur Enable-PnpDevice /
     // Stop-Service : toute erreur (pas d'adaptateur désactivé à activer,
     // permissions, service verrouillé) était avalée et powershell.exe sortait
