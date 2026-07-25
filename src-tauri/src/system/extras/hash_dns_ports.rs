@@ -12,8 +12,16 @@ pub struct HashResult {
     pub size_bytes: u64,
 }
 
+// Anti-freeze : Get-FileHash est bloquant (fichiers volumineux) — jamais
+// inline sur le thread de commande.
 #[tauri::command]
-pub fn hash_file(path: String, algorithm: String) -> Result<HashResult, String> {
+pub async fn hash_file(path: String, algorithm: String) -> Result<HashResult, String> {
+    tokio::task::spawn_blocking(move || hash_file_blocking(path, algorithm))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn hash_file_blocking(path: String, algorithm: String) -> Result<HashResult, String> {
     let algo = match algorithm.to_uppercase().as_str() {
         "MD5" => "MD5",
         "SHA1" => "SHA1",
@@ -30,8 +38,16 @@ pub fn hash_file(path: String, algorithm: String) -> Result<HashResult, String> 
     Ok(HashResult { path, algorithm: algo.to_string(), hash: hash.trim().to_string(), size_bytes: size })
 }
 
+// Anti-freeze : hachage d'un dossier entier (jusqu'à 500 fichiers) est
+// bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn hash_folder(path: String, algorithm: String, max_files: u32) -> Result<Vec<HashResult>, String> {
+pub async fn hash_folder(path: String, algorithm: String, max_files: u32) -> Result<Vec<HashResult>, String> {
+    tokio::task::spawn_blocking(move || hash_folder_blocking(path, algorithm, max_files))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn hash_folder_blocking(path: String, algorithm: String, max_files: u32) -> Result<Vec<HashResult>, String> {
     let algo = match algorithm.to_uppercase().as_str() {
         "MD5"    => "MD5",
         "SHA1"   => "SHA1",
@@ -93,8 +109,15 @@ pub fn get_dns_presets() -> Vec<DnsPreset> {
     ]
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_network_adapters_for_dns() -> Result<Vec<NetworkAdapterInfo>, String> {
+pub async fn get_network_adapters_for_dns() -> Result<Vec<NetworkAdapterInfo>, String> {
+    tokio::task::spawn_blocking(get_network_adapters_for_dns_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_network_adapters_for_dns_blocking() -> Result<Vec<NetworkAdapterInfo>, String> {
     let script = r#"
 Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object {
     $dns = (Get-DnsClientServerAddress -InterfaceAlias $_.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses
@@ -121,8 +144,15 @@ Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object {
     }).collect())
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn switch_dns(adapter: String, primary: String, secondary: String) -> Result<String, String> {
+pub async fn switch_dns(adapter: String, primary: String, secondary: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || switch_dns_blocking(adapter, primary, secondary))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn switch_dns_blocking(adapter: String, primary: String, secondary: String) -> Result<String, String> {
     // Valider les IPs avant usage — après validation, ne contiennent que [0-9.:/]
     if !primary.is_empty() {
         primary.parse::<std::net::IpAddr>().map_err(|_| format!("IP DNS primaire invalide : {}", primary))?;
@@ -152,13 +182,27 @@ pub fn switch_dns(adapter: String, primary: String, secondary: String) -> Result
     }
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn flush_dns_cache() -> Result<String, String> {
+pub async fn flush_dns_cache() -> Result<String, String> {
+    tokio::task::spawn_blocking(flush_dns_cache_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn flush_dns_cache_blocking() -> Result<String, String> {
     ps("Clear-DnsClientCache; 'DNS cache vidé avec succès'")
 }
 
+// Anti-freeze : Test-Connection est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn ping_dns(ip: String) -> Result<i32, String> {
+pub async fn ping_dns(ip: String) -> Result<i32, String> {
+    tokio::task::spawn_blocking(move || ping_dns_blocking(ip))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn ping_dns_blocking(ip: String) -> Result<i32, String> {
     // Valider comme IpAddr — après validation, ne contient que [0-9.:/] donc sûr à embarquer
     ip.parse::<std::net::IpAddr>().map_err(|_| format!("Adresse IP invalide : {}", ip))?;
     let script = format!(
@@ -182,8 +226,15 @@ pub struct OpenPort {
     pub process_name: String,
 }
 
+// Anti-freeze : PowerShell/netstat est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_local_ports() -> Result<Vec<OpenPort>, String> {
+pub async fn get_local_ports() -> Result<Vec<OpenPort>, String> {
+    tokio::task::spawn_blocking(get_local_ports_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_local_ports_blocking() -> Result<Vec<OpenPort>, String> {
     let script = r#"
 $procs = @{}
 Get-Process | ForEach-Object { $procs[$_.Id] = $_.ProcessName }
