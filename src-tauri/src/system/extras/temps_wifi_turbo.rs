@@ -166,8 +166,15 @@ pub struct CoreTemp {
     pub temp_celsius: f32,
 }
 
+// Anti-freeze : WMI/CIM est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_cpu_core_temps() -> Result<Vec<CoreTemp>, String> {
+pub async fn get_cpu_core_temps() -> Result<Vec<CoreTemp>, String> {
+    tokio::task::spawn_blocking(get_cpu_core_temps_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_cpu_core_temps_blocking() -> Result<Vec<CoreTemp>, String> {
     let script = r#"
 $result = @()
 try {
@@ -206,8 +213,15 @@ pub struct GpuTemp {
     pub source: String,
 }
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn get_gpu_temps() -> Result<Vec<GpuTemp>, String> {
+pub async fn get_gpu_temps() -> Result<Vec<GpuTemp>, String> {
+    tokio::task::spawn_blocking(get_gpu_temps_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_gpu_temps_blocking() -> Result<Vec<GpuTemp>, String> {
     let script = r#"
 $result = @()
 $seen = @{}
@@ -398,8 +412,15 @@ const PS_HW_SCH: &str = r#"try {
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name 'HwSchMode' -Value 2 -Type DWord -ErrorAction Stop
 } catch { Write-Output $_.Exception.Message; exit 1 }"#;
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn apply_turbo_mode(mode: String) -> Result<TurboResult, String> {
+pub async fn apply_turbo_mode(mode: String) -> Result<TurboResult, String> {
+    tokio::task::spawn_blocking(move || apply_turbo_mode_blocking(mode))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn apply_turbo_mode_blocking(mode: String) -> Result<TurboResult, String> {
     let mut done: Vec<String> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
@@ -497,8 +518,15 @@ pub struct PowerPlanResult {
     pub message: String,
 }
 
+// Anti-freeze : powercfg est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn enable_hidden_power_plans() -> Result<Vec<PowerPlanResult>, String> {
+pub async fn enable_hidden_power_plans() -> Result<Vec<PowerPlanResult>, String> {
+    tokio::task::spawn_blocking(enable_hidden_power_plans_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn enable_hidden_power_plans_blocking() -> Result<Vec<PowerPlanResult>, String> {
     let hidden_plans = vec![
         ("Performances maximales", "e9a42b02-d5df-448d-aa00-03f14749eb61"),
     ];
@@ -526,8 +554,15 @@ pub fn enable_hidden_power_plans() -> Result<Vec<PowerPlanResult>, String> {
 
 // ─── Quick Optimization Runner ────────────────────────────────────────────────
 
+// Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub fn run_quick_optimization(opt_id: String) -> Result<String, String> {
+pub async fn run_quick_optimization(opt_id: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || run_quick_optimization_blocking(opt_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn run_quick_optimization_blocking(opt_id: String) -> Result<String, String> {
     // Même protocole que apply_turbo_mode : les actions qui exigent l'élévation
     // (journaux, SysMain, télémétrie HKLM, TRIM) sortent `exit 1` si rien n'a
     // réellement été appliqué — l'UI affiche alors le toast d'erreur au lieu
