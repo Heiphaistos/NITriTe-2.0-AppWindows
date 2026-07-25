@@ -203,6 +203,9 @@ onUnmounted(stopAuto);
                 {{ p.process_name || '—' }}
               </td>
             </tr>
+            <tr v-if="!filtered.length">
+              <td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;font-size:13px">Aucun port ne correspond aux filtres</td>
+            </tr>
           </tbody>
         </table>
       </div>

@@ -332,8 +332,12 @@ onUnmounted(() => {
           <Wifi :size="32" style="color:var(--text-muted);opacity:.2" />
           <p>Aucun réseau WiFi détecté</p>
         </div>
+        <div v-else-if="sorted.length === 0" class="empty-state">
+          <Wifi :size="32" style="color:var(--text-muted);opacity:.2" />
+          <p>Aucun réseau ne correspond aux filtres</p>
+        </div>
 
-        <div class="networks-list">
+        <div v-else class="networks-list">
           <div v-for="n in sorted" :key="n.bssid || n.ssid" class="network-row">
             <div class="signal-bars">
               <div v-for="i in 4" :key="i" class="bar-seg" :class="{ active: i <= signalBars(n.signal_percent) }" :style="{ background: i <= signalBars(n.signal_percent) ? signalColor(n.signal_percent) : '' }"></div>
