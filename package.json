@@ -39,6 +39,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "@vitest/coverage-v8": "^4.1.10",
     "@vue/test-utils": "^2.4.6",
+    "esbuild": "^0.28.1",
     "happy-dom": "^20.9.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^6.0.3",
