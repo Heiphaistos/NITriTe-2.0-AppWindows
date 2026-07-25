@@ -27,6 +27,13 @@
         </button>
       </div>
     </div>
+    <div class="section-card" v-else-if="sysInfo">
+      <h2 class="section-title"><MonitorCheck :size="16" /> Installation Windows détectée</h2>
+      <div class="empty-state">
+        <MonitorCheck :size="28" style="opacity:.25" />
+        <p>Aucune installation Windows détectée sur les disques connectés</p>
+      </div>
+    </div>
 
     <!-- Disques disponibles -->
     <div class="section-card" v-if="drives.length > 0">
@@ -45,6 +52,13 @@
             <span class="drive-sizes">{{ drive.free_gb.toFixed(1) }} GB libre / {{ drive.size_gb.toFixed(1) }} GB</span>
           </div>
         </div>
+      </div>
+    </div>
+    <div class="section-card" v-else-if="sysInfo">
+      <h2 class="section-title"><HardDrive :size="16" /> Disques disponibles</h2>
+      <div class="empty-state">
+        <HardDrive :size="28" style="opacity:.25" />
+        <p>Aucun disque détecté</p>
       </div>
     </div>
 
@@ -164,6 +178,7 @@ onMounted(loadInfo);
 
 .section-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .section-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 12px; }
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 30px; color: var(--text-muted); font-size: 13px; }
 
 .install-list { display: flex; flex-direction: column; gap: 8px; }
 .install-card { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); cursor: pointer; transition: all .15s; width: 100%; font-family: inherit; }
