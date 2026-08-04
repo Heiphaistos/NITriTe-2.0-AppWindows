@@ -276,6 +276,18 @@ fn collect_gpu_data() -> Result<Vec<GpuData>, String> {
         let ps = format!("{}{}", crate::utils::ps::LOC_COUNTER_PRELUDE, r#"
 try {
     $gpus = Get-WmiObject Win32_VideoController -ErrorAction Stop | Where-Object { $_.Name -notlike '*Basic*' -and $_.Name -notlike '*Miroir*' }
+    # AdapterRAM (WMI, uint32) plafonne a ~4095 Mo pour tout GPU dedie >= 4 Go, quel que soit le
+    # fabricant (verifie en direct RTX 3070 Laptop 8Go reel : AdapterRAM=4293918720 octets tronque).
+    # HardwareInformation.qwMemorySize (registre pilote, QWORD 64 bits) donne la valeur reelle.
+    $regMap = @{}
+    try {
+        Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}" -EA SilentlyContinue |
+            Where-Object { $_.PSChildName -match '^\d{4}$' } |
+            ForEach-Object {
+                $rp = Get-ItemProperty $_.PSPath -EA SilentlyContinue
+                if ($rp -and $rp.DriverDesc) { $regMap[[string]$rp.DriverDesc] = $rp }
+            }
+    } catch {}
     $result = foreach ($g in $gpus) {
         $usage = 0
         try {
@@ -283,7 +295,24 @@ try {
             $counters = (Get-Counter $pGpu -ErrorAction SilentlyContinue).CounterSamples
             if ($counters) { $usage = [math]::Round(($counters | Measure-Object -Property CookedValue -Sum).Sum) }
         } catch {}
-        $vramTotal = if ($g.AdapterRAM -gt 0) { [math]::Round($g.AdapterRAM / 1MB) } else { 0 }
+        $vramBytes = 0
+        $rp = $regMap[[string]$g.Name]
+        if ($rp) {
+            # HardwareInformation.MemorySize peut etre un Byte[] brut (REG_BINARY) selon le pilote,
+            # [long] plante dessus (verifie en direct sur Intel UHD Graphics) -> try/catch obligatoire
+            try {
+                if ($rp.'HardwareInformation.qwMemorySize') {
+                    $v = [long]$rp.'HardwareInformation.qwMemorySize'
+                    if ($v -gt 1MB) { $vramBytes = $v }
+                }
+                if ($vramBytes -le 0 -and $rp.'HardwareInformation.MemorySize') {
+                    $v = [long]$rp.'HardwareInformation.MemorySize'
+                    if ($v -gt 1MB) { $vramBytes = $v }
+                }
+            } catch {}
+        }
+        if ($vramBytes -le 0 -and $g.AdapterRAM -gt 0) { $vramBytes = [long][uint32]$g.AdapterRAM }
+        $vramTotal = if ($vramBytes -gt 0) { [math]::Round($vramBytes / 1MB) } else { 0 }
         [PSCustomObject]@{ Name=$g.Name; Usage=$usage; VramUsed=0; VramTotal=$vramTotal; Temp=0 }
     }
     $result | ConvertTo-Json -Compress
