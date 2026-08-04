@@ -258,6 +258,22 @@ pub async fn trash_file(path: String) -> Result<(), String> {
 }
 
 fn trash_file_blocking(path: String) -> Result<(), String> {
+    // Meme garde que delete_file_blocking : trash_file est appele EN PREMIER
+    // par le frontend (DuplicateFinderPage/BigFilesFinderPage font trash_file
+    // -> fallback delete_file seulement en cas d'echec), donc sans ce check ici
+    // la protection de delete_file_blocking n'est jamais atteinte en pratique —
+    // un scan pointe sur C:\Windows (scanPath est un champ texte libre cote UI)
+    // pouvait envoyer des fichiers systeme a la corbeille sans aucun garde-fou.
+    let canonical = std::fs::canonicalize(&path)
+        .map_err(|e| format!("Chemin inaccessible {}: {}", path, e))?;
+    if is_system_path_blocked(&canonical) {
+        return Err(format!("Suppression interdite dans les répertoires système: {}", canonical.display()));
+    }
+    // Chemin original (pas `canonical`) pour la commande : `canonical` porte le
+    // préfixe verbatim étendu `\\?\` sur Windows, mal supporté par
+    // Microsoft.VisualBasic.FileIO (contrairement à std::fs, utilisé par
+    // delete_file_blocking) — le garde de sécurité ci-dessus reste valide car
+    // canonicalize() résout déjà tout `..` avant la comparaison.
     let safe = path.replace('\'', "''");
     let script = format!(r#"
 Add-Type -AssemblyName Microsoft.VisualBasic
