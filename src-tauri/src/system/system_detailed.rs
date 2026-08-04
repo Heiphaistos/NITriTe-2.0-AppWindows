@@ -170,6 +170,36 @@ fn nvidia_vram_map() -> std::collections::HashMap<String, u64> {
     map
 }
 
+// Win32_VideoController.AdapterRAM est un DWORD WMI (uint32) : plafonné/tronqué à 4 Go pour tout
+// GPU dédié >= 4 Go, quel que soit le fabricant (NVIDIA, AMD, Intel). La valeur fiable au-delà de
+// 4 Go vit dans le registre pilote (HardwareInformation.qwMemorySize, QWORD 64 bits), indexée par
+// DriverDesc — même source que la vérité utilisée par le scan rapide (total_scan/hw_extended.rs).
+fn registry_vram_map() -> std::collections::HashMap<String, u64> {
+    let mut map = std::collections::HashMap::new();
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::HKEY_LOCAL_MACHINE;
+        use winreg::RegKey;
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(class_key) = hklm.open_subkey(
+            r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+        ) else { return map; };
+        for subkey_name in class_key.enum_keys().flatten() {
+            if subkey_name.len() != 4 || !subkey_name.chars().all(|c| c.is_ascii_digit()) { continue; }
+            let Ok(sub) = class_key.open_subkey(&subkey_name) else { continue };
+            let Ok(driver_desc) = sub.get_value::<String, _>("DriverDesc") else { continue };
+            // qwMemorySize (QWORD 64 bits) est la valeur fiable au-delà de 4 Go ; MemorySize (DWORD 32 bits,
+            // legacy) plafonne/tronque exactement comme AdapterRAM WMI — vérifié en direct sur RTX 3070 Laptop
+            // (AdapterRAM=MemorySize=4293918720≈4Go tronqué, qwMemorySize=8589934592=8Go exact).
+            let vram_bytes = sub.get_value::<u64, _>("HardwareInformation.qwMemorySize")
+                .or_else(|_| sub.get_value::<u32, _>("HardwareInformation.MemorySize").map(|v| v as u64))
+                .unwrap_or(0);
+            if vram_bytes > 1_048_576 { map.insert(driver_desc, vram_bytes / (1024 * 1024)); }
+        }
+    }
+    map
+}
+
 // ============================================================================
 // Commands
 // ============================================================================
@@ -196,13 +226,17 @@ pub async fn get_gpu_detailed() -> Result<Vec<GpuDetailed>, String> {
         let wmi = wmi_con()?;
         let r: Vec<WmiVideoController> = wmi.raw_query("SELECT * FROM Win32_VideoController").map_err(|e| e.to_string())?;
         let nv = nvidia_vram_map();
+        let reg = registry_vram_map();
         let mut gpus: Vec<GpuDetailed> = r.into_iter().map(|g| {
             let name = g.Name.unwrap_or_default().trim().to_string();
             let h = g.CurrentHorizontalResolution.unwrap_or(0);
             let v = g.CurrentVerticalResolution.unwrap_or(0);
             let resolution = if h > 0 && v > 0 { format!("{}x{}", h, v) } else { "N/A".to_string() };
             let wmi_mb = g.AdapterRAM.unwrap_or(0) / (1024 * 1024);
-            let adapter_ram_mb = nv.get(&name).copied().unwrap_or(wmi_mb);
+            // Priorité : registre 64 bits (fiable tous fabricants) > nvidia-smi (si dispo) > WMI AdapterRAM (plafonné 4 Go)
+            let adapter_ram_mb = reg.get(&name).copied()
+                .or_else(|| nv.get(&name).copied())
+                .unwrap_or(wmi_mb);
             GpuDetailed {
                 adapter_ram_mb,
                 driver_date: fmt_date(&g.DriverDate.unwrap_or_default()),
@@ -808,6 +842,26 @@ mod tests {
     #[test]
     fn form_factor_dimm() {
         assert_eq!(form_factor_str(8), "DIMM");
+    }
+
+    // Dépend du matériel réel de la machine d'exécution — pas portable en CI, lancer manuellement
+    // (`cargo test -- --ignored --nocapture`) pour re-vérifier après tout futur changement de ce module.
+    // Régression figée le 2026-08-05 : GPU dédié rapportait 4 Go au lieu de 8/24 Go réels sur toute
+    // machine (NVIDIA et AMD) car AdapterRAM (WMI, uint32) ET HardwareInformation.MemorySize (registre,
+    // DWORD legacy) plafonnent tous deux à ~4095 Mo — seul HardwareInformation.qwMemorySize (QWORD 64
+    // bits) donne la vraie valeur. Vérifié en direct : RTX 3070 Laptop 8 Go réel, AdapterRAM=MemorySize=
+    // 4293918720≈4095 Mo (tronqué), qwMemorySize=8589934592=8192 Mo (correct).
+    #[test]
+    #[ignore]
+    fn registry_vram_map_not_capped_at_4gb() {
+        let map = registry_vram_map();
+        for (name, mb) in &map {
+            assert!(
+                *mb < 4090 || *mb > 4100,
+                "GPU '{name}' rapporte {mb} Mo — proche du plafond WMI 4 Go (~4095 Mo), \
+                 vérifier que qwMemorySize est bien lu en priorité (registry_vram_map)"
+            );
+        }
     }
 
     #[test]

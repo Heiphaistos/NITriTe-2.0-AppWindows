@@ -38,17 +38,20 @@ try {
     foreach ($g in $gpuList) {
         $name = if ($g.Name) { [string]$g.Name } elseif ($g.Caption) { [string]$g.Caption } else { "GPU $gIdx" }
         # VRAM registre 64-bit — matching par DriverDesc (fiable, indépendant de l'ordre d'énumération)
+        # qwMemorySize (QWORD) prioritaire : MemorySize (DWORD legacy) plafonne à 4 Go tout comme AdapterRAM
+        # WMI, vérifié en direct (RTX 3070 Laptop : AdapterRAM=MemorySize=4293918720≈4Go tronqué,
+        # qwMemorySize=8589934592=8Go exact) — l'ancien ordre (MemorySize avant qwMemorySize) ne corrigeait rien.
         $vramBytes = [long]0
         $rp = $regMap[$name]
         if (-not $rp -and $g.Caption -and [string]$g.Caption -ne $name) { $rp = $regMap[[string]$g.Caption] }
         if ($rp) {
             try {
-                if ($rp.'HardwareInformation.MemorySize') {
-                    $v = [long]$rp.'HardwareInformation.MemorySize'
+                if ($rp.'HardwareInformation.qwMemorySize') {
+                    $v = [long]$rp.'HardwareInformation.qwMemorySize'
                     if ($v -gt 1MB) { $vramBytes = $v }
                 }
-                if ($vramBytes -le 0 -and $rp.'HardwareInformation.qwMemorySize') {
-                    $v = [long]$rp.'HardwareInformation.qwMemorySize'
+                if ($vramBytes -le 0 -and $rp.'HardwareInformation.MemorySize') {
+                    $v = [long]$rp.'HardwareInformation.MemorySize'
                     if ($v -gt 1MB) { $vramBytes = $v }
                 }
             } catch {}
