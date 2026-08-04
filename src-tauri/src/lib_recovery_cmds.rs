@@ -395,6 +395,51 @@ async fn scan_lost_partitions_cmd(
 // === Save content to path (dialog-driven export) ===
 // Le chemin vient toujours d'une save dialog Tauri — le choix utilisateur est le consentement.
 
+/// Whitelist/blacklist du répertoire parent d'un export. `canonical_parent` doit
+/// venir de `std::fs::canonicalize()` — sur Windows cela inclut le préfixe
+/// verbatim étendu `\\?\C:\...` (Prefix::VerbatimDisk), qu'on strip explicitement
+/// ICI avant toute comparaison : sans ce strip, aucune comparaison starts_with()
+/// contre un préfixe plat ("c:\...") ne matche jamais, ce qui neutralisait à la
+/// fois la whitelist ET le blocage des répertoires système — la fonction finissait
+/// toujours par autoriser l'écriture, y compris dans C:\Windows. Même piège que
+/// trash_file_blocking (a9408d7) et delete_dll (b27e158).
+fn validate_export_path(canonical_parent: &std::path::Path, allowed_prefixes: &[&str]) -> Result<(), NiTriTeError> {
+    let canonical_raw = canonical_parent.to_string_lossy().to_lowercase();
+    let canonical_str = canonical_raw.strip_prefix(r"\\?\").unwrap_or(&canonical_raw);
+
+    let in_allowed = allowed_prefixes.iter().any(|prefix| {
+        !prefix.is_empty() && canonical_str.starts_with(prefix)
+    });
+
+    // Bloque explicitement les répertoires système Windows, quel que soit le lecteur
+    let is_system_path = canonical_str.starts_with(r"c:\windows")
+        || canonical_str.starts_with(r"c:\program files")
+        || canonical_str.starts_with(r"c:\programdata");
+
+    if is_system_path {
+        return Err(NiTriTeError::CommandDenied(
+            format!("Écriture dans un répertoire système interdite: {}", canonical_parent.display()),
+        ));
+    }
+
+    if !in_allowed {
+        // Pour les chemins hors whitelist (ex: clé USB D:\, E:\),
+        // on accepte uniquement si ce n'est pas un chemin système
+        // et si la lettre de lecteur n'est pas C: (ou si c'est C: vérifié ci-dessus)
+        let is_c_drive = canonical_str.starts_with("c:");
+        if is_c_drive {
+            return Err(NiTriTeError::CommandDenied(
+                format!(
+                    "Chemin hors des répertoires autorisés (Bureau, Documents, Téléchargements, données app): {}",
+                    canonical_parent.display()
+                ),
+            ));
+        }
+        // Autre lecteur (clé USB, disque externe) → autorisé
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn save_content_to_path(path: String, content: String) -> Result<(), NiTriTeError> {
     // Extensions exécutables interdites
@@ -427,8 +472,6 @@ async fn save_content_to_path(path: String, content: String) -> Result<(), NiTri
         return Err(NiTriTeError::CommandDenied("Chemin sans répertoire parent".into()));
     };
 
-    let canonical_str = canonical_parent.to_string_lossy().to_lowercase();
-
     // Whitelist des répertoires autorisés (résolu après canonicalize)
     // Couvre Desktop, Documents, Downloads, répertoire de données de l'app
     let user_profile = std::env::var("USERPROFILE").unwrap_or_default().to_lowercase();
@@ -444,38 +487,7 @@ async fn save_content_to_path(path: String, content: String) -> Result<(), NiTri
         &app_data_dir,
     ];
 
-    let in_allowed = allowed_prefixes.iter().any(|prefix| {
-        !prefix.is_empty() && canonical_str.starts_with(prefix)
-    });
-
-    // Autorise aussi les chemins sur d'autres lecteurs (clé USB) hors C:\ système
-    // mais bloque explicitement les répertoires système Windows
-    let is_system_path = canonical_str.starts_with(r"c:\windows")
-        || canonical_str.starts_with(r"c:\program files")
-        || canonical_str.starts_with(r"c:\programdata");
-
-    if is_system_path {
-        return Err(NiTriTeError::CommandDenied(
-            format!("Écriture dans un répertoire système interdite: {}", canonical_parent.display()),
-        ));
-    }
-
-    if !in_allowed {
-        // Pour les chemins hors whitelist (ex: clé USB D:\, E:\),
-        // on accepte uniquement si ce n'est pas un chemin système
-        // et si la lettre de lecteur n'est pas C: (ou si c'est C: vérifié ci-dessus)
-        let first_two: String = canonical_str.chars().take(2).collect();
-        let is_c_drive = first_two == "c:";
-        if is_c_drive {
-            return Err(NiTriTeError::CommandDenied(
-                format!(
-                    "Chemin hors des répertoires autorisés (Bureau, Documents, Téléchargements, données app): {}",
-                    canonical_parent.display()
-                ),
-            ));
-        }
-        // Autre lecteur (clé USB, disque externe) → autorisé
-    }
+    validate_export_path(&canonical_parent, allowed_prefixes)?;
 
     let final_path = canonical_parent.join(
         raw_path.file_name().ok_or_else(|| NiTriTeError::CommandDenied("Nom de fichier manquant".into()))?
@@ -728,6 +740,60 @@ mod recovery_tests {
     fn newline_is_dangerous() {
         assert!(has_shell_metacharacters("cmd\nwhoami"));
         assert!(has_shell_metacharacters("cmd\rwhoami"));
+    }
+
+    // ── validate_export_path ──────────────────────────────────────────────────
+    // Régression : canonicalize() renvoie le préfixe verbatim `\\?\` sur Windows.
+    // Sans le strip explicite dans validate_export_path, TOUTES ces assertions
+    // échoueraient dans l'autre sens (whitelist jamais matchée, blocage système
+    // jamais déclenché, et le fallback "autre lecteur" finissait par tout
+    // autoriser, y compris C:\Windows).
+
+    #[test]
+    fn verbatim_desktop_path_is_allowed() {
+        let p = std::path::Path::new(r"\\?\C:\Users\Momo\Desktop");
+        let allowed = [r"c:\users\momo\desktop"];
+        assert!(validate_export_path(p, &allowed).is_ok());
+    }
+
+    #[test]
+    fn verbatim_windows_system_path_is_blocked() {
+        let p = std::path::Path::new(r"\\?\C:\Windows\System32");
+        let allowed = [r"c:\users\momo\desktop"];
+        assert!(validate_export_path(p, &allowed).is_err());
+    }
+
+    #[test]
+    fn verbatim_program_files_is_blocked() {
+        let p = std::path::Path::new(r"\\?\C:\Program Files\Evil");
+        let allowed = [r"c:\users\momo\desktop"];
+        assert!(validate_export_path(p, &allowed).is_err());
+    }
+
+    #[test]
+    fn verbatim_c_drive_outside_whitelist_is_blocked() {
+        // Ni dans la whitelist, ni un répertoire système explicite, mais sur C: —
+        // doit rester refusé (c'est ce fallback qui était cassé : is_c_drive
+        // valait toujours faux, laissant passer n'importe quel chemin C:\...).
+        let p = std::path::Path::new(r"\\?\C:\SomeRandomFolder");
+        let allowed = [r"c:\users\momo\desktop"];
+        assert!(validate_export_path(p, &allowed).is_err());
+    }
+
+    #[test]
+    fn verbatim_usb_drive_outside_whitelist_is_allowed() {
+        // Clé USB / disque externe hors C: — autorisé même hors whitelist.
+        let p = std::path::Path::new(r"\\?\D:\Backups");
+        let allowed = [r"c:\users\momo\desktop"];
+        assert!(validate_export_path(p, &allowed).is_ok());
+    }
+
+    #[test]
+    fn non_verbatim_path_still_works() {
+        // Comportement conservé même sans préfixe verbatim.
+        let allowed = [r"c:\users\momo\desktop"];
+        assert!(validate_export_path(std::path::Path::new(r"C:\Users\Momo\Desktop"), &allowed).is_ok());
+        assert!(validate_export_path(std::path::Path::new(r"C:\Windows"), &allowed).is_err());
     }
 }
 
