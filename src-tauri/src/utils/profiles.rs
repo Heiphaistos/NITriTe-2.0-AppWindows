@@ -23,6 +23,18 @@ fn sanitize_filename(name: &str) -> String {
         .collect()
 }
 
+/// Nom de fichier final pour un profil : sanitize_filename() n'est PAS injective
+/// (tout caractère spécial devient '_'), donc deux noms distincts et plausibles
+/// ("Bureau/Pro" et "Bureau Pro") produiraient le même fichier -> écrasement
+/// silencieux du premier profil par le second. Un suffixe de hash déterministe
+/// du nom ORIGINAL (pas du nom sanitisé) désambiguïse sans casser la lisibilité.
+fn profile_filename(name: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    name.hash(&mut hasher);
+    format!("{}_{:016x}.json", sanitize_filename(name), hasher.finish())
+}
+
 pub fn list_profiles() -> Vec<Profile> {
     let dir = profiles_dir();
     let mut profiles = Vec::new();
@@ -44,8 +56,7 @@ pub fn list_profiles() -> Vec<Profile> {
 
 pub fn save_profile(profile: &Profile) -> Result<(), std::io::Error> {
     let dir = profiles_dir();
-    let filename = sanitize_filename(&profile.name);
-    let path = dir.join(format!("{}.json", filename));
+    let path = dir.join(profile_filename(&profile.name));
     let json = serde_json::to_string_pretty(profile)
         .map_err(std::io::Error::other)?;
     std::fs::write(path, json)
@@ -53,8 +64,7 @@ pub fn save_profile(profile: &Profile) -> Result<(), std::io::Error> {
 
 pub fn delete_profile(name: &str) -> Result<(), std::io::Error> {
     let dir = profiles_dir();
-    let filename = sanitize_filename(name);
-    let path = dir.join(format!("{}.json", filename));
+    let path = dir.join(profile_filename(name));
     if path.exists() {
         std::fs::remove_file(path)
     } else {
@@ -64,14 +74,12 @@ pub fn delete_profile(name: &str) -> Result<(), std::io::Error> {
 
 pub fn profile_exists(name: &str) -> bool {
     let dir = profiles_dir();
-    let filename = sanitize_filename(name);
-    dir.join(format!("{}.json", filename)).exists()
+    dir.join(profile_filename(name)).exists()
 }
 
 pub fn export_profile_json(name: &str) -> Option<String> {
     let dir = profiles_dir();
-    let filename = sanitize_filename(name);
-    let path = dir.join(format!("{}.json", filename));
+    let path = dir.join(profile_filename(name));
     std::fs::read_to_string(path).ok()
 }
 
@@ -112,6 +120,23 @@ mod tests {
     #[test]
     fn sanitize_empty_stays_empty() {
         assert_eq!(sanitize_filename(""), "");
+    }
+
+    #[test]
+    fn profile_filename_distinct_names_no_collision() {
+        // Régression : "Bureau/Pro" et "Bureau Pro" sanitisent au même résultat
+        // ("Bureau_Pro") via sanitize_filename seul -> sans le hash de
+        // désambiguïsation, save_profile("Bureau Pro") écraserait silencieusement
+        // le fichier de "Bureau/Pro" (et vice-versa).
+        assert_eq!(sanitize_filename("Bureau/Pro"), sanitize_filename("Bureau Pro"));
+        assert_ne!(profile_filename("Bureau/Pro"), profile_filename("Bureau Pro"));
+    }
+
+    #[test]
+    fn profile_filename_same_name_deterministic() {
+        // Doit être stable pour que delete/export retrouvent bien le fichier
+        // écrit par save_profile avec le même nom.
+        assert_eq!(profile_filename("Config Dev"), profile_filename("Config Dev"));
     }
 
     #[test]
