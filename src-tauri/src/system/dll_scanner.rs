@@ -117,6 +117,24 @@ pub async fn scan_dlls() -> Result<Vec<DllEntry>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Vérifie qu'un chemin canonique appartient à System32/SysWOW64/Program Files.
+/// Comparaison sur la représentation texte (pas Path::starts_with) : sur Windows,
+/// canonicalize() retourne le préfixe verbatim étendu `\\?\C:\...`
+/// (Prefix::VerbatimDisk), qui n'est JAMAIS égal au composant `Prefix::Disk`
+/// d'un chemin `C:\...` classique pour Path::starts_with — la whitelist
+/// rejetait donc TOUJOURS toute suppression, y compris les DLL légitimes.
+fn is_dll_path_allowed(canonical: &std::path::Path) -> bool {
+    let raw = canonical.to_string_lossy().to_lowercase().replace('/', "\\");
+    let path_lower = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
+    let allowed = [
+        r"c:\windows\system32",
+        r"c:\windows\syswow64",
+        r"c:\program files",
+        r"c:\program files (x86)",
+    ];
+    allowed.iter().any(|base| path_lower.starts_with(base))
+}
+
 #[tauri::command]
 pub async fn delete_dll(path: String) -> Result<(), String> {
     // Sécurité : autoriser uniquement les .dll dans System32/SysWOW64/Program Files
@@ -126,16 +144,7 @@ pub async fn delete_dll(path: String) -> Result<(), String> {
         return Err("Suppression refusée : extension non autorisée.".to_string());
     }
     let canonical = p.canonicalize().map_err(|e| e.to_string())?;
-    let allowed = [
-        r"C:\Windows\System32",
-        r"C:\Windows\SysWOW64",
-        r"C:\Program Files",
-        r"C:\Program Files (x86)",
-    ];
-    let in_allowed = allowed.iter().any(|base| {
-        canonical.starts_with(std::path::Path::new(base))
-    });
-    if !in_allowed {
+    if !is_dll_path_allowed(&canonical) {
         return Err("Suppression refusée : chemin hors des répertoires autorisés.".to_string());
     }
     tokio::task::spawn_blocking(move || {
@@ -176,6 +185,43 @@ mod tests {
     #[test]
     fn empty_company_in_system32_is_tiers() {
         assert_eq!(dll_category("", "System32"), "Tiers (System32)");
+    }
+
+    // ── is_dll_path_allowed ────────────────────────────────────────────────────
+    // Régression : canonicalize() renvoie le préfixe verbatim `\\?\` sur Windows,
+    // que Path::starts_with ne reconnaît jamais comme préfixe `C:\...` classique.
+    // Sans le fix, TOUTES ces assertions "allowed" échoueraient (delete_dll
+    // refusait 100% des suppressions, y compris légitimes).
+
+    #[test]
+    fn verbatim_system32_path_is_allowed() {
+        let p = std::path::Path::new(r"\\?\C:\Windows\System32\example.dll");
+        assert!(is_dll_path_allowed(p));
+    }
+
+    #[test]
+    fn verbatim_syswow64_path_is_allowed() {
+        let p = std::path::Path::new(r"\\?\C:\Windows\SysWOW64\example.dll");
+        assert!(is_dll_path_allowed(p));
+    }
+
+    #[test]
+    fn verbatim_program_files_path_is_allowed() {
+        let p = std::path::Path::new(r"\\?\C:\Program Files\SomeApp\example.dll");
+        assert!(is_dll_path_allowed(p));
+    }
+
+    #[test]
+    fn verbatim_path_outside_whitelist_is_rejected() {
+        let p = std::path::Path::new(r"\\?\C:\Users\Momo\Documents\example.dll");
+        assert!(!is_dll_path_allowed(p));
+    }
+
+    #[test]
+    fn non_verbatim_path_still_works() {
+        // Comportement conservé même sans préfixe verbatim (ex: appel direct hors canonicalize()).
+        assert!(is_dll_path_allowed(std::path::Path::new(r"C:\Windows\System32\example.dll")));
+        assert!(!is_dll_path_allowed(std::path::Path::new(r"C:\Users\Momo\example.dll")));
     }
 
     #[test]
