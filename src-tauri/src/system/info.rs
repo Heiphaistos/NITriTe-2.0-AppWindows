@@ -167,7 +167,10 @@ fn registry_vram_map() -> HashMap<String, f64> {
 
     let mut map = HashMap::new();
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let class_path = r"SYSTEM\ControlSet001\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}";
+    // CurrentControlSet (pas ControlSet001 en dur) : Select\Current peut pointer vers un autre
+    // jeu de contrôle (ControlSet002+) après un boot "Last Known Good"/réparation — ControlSet001
+    // en dur renverrait alors une carte VRAM vide ou celle d'une config obsolète.
+    let class_path = r"SYSTEM\CurrentControlSet\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}";
     let Ok(class_key) = hklm.open_subkey(class_path) else { return map };
 
     for subkey_name in class_key.enum_keys().filter_map(|k| k.ok()) {
@@ -495,5 +498,19 @@ mod tests {
         nvidia.insert("rtx 3080".to_string(), 10.0);
         let empty: HashMap<String, f64> = HashMap::new();
         assert_eq!(resolve_vram("NVIDIA GeForce RTX 3080", 4.0, &nvidia, &empty), 10.0);
+    }
+
+    // Dépend du matériel réel — pas portable en CI, lancer manuellement
+    // (`cargo test -- --ignored --nocapture`). Régression figée le 2026-08-05 : le chemin registre
+    // était en dur sur `ControlSet001` au lieu de `CurrentControlSet` — correct par coïncidence sur
+    // toute machine où `HKLM:\SYSTEM\Select\Current` vaut 1 (le cas courant), mais renverrait une
+    // carte VRAM vide sur une machine ayant démarré sur un autre jeu de contrôle (ex: après un boot
+    // "Last Known Good"). `CurrentControlSet` est justement le symlink prévu pour ne jamais avoir à
+    // deviner ce numéro.
+    #[test]
+    #[ignore]
+    fn registry_vram_map_finds_dedicated_gpu() {
+        let map = registry_vram_map();
+        assert!(!map.is_empty(), "registry_vram_map() n'a trouvé aucun GPU — CurrentControlSet inaccessible ?");
     }
 }
