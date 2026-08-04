@@ -97,7 +97,7 @@ pub fn run() {
     utils::logger::init_logger();
     logging::init_log_dir();
     logging::log_internal("INFO", "SYSTEM", "NiTriTe démarré — init logging", None);
-    tracing::info!("Demarrage NiTriTe 8.76.0");
+    tracing::info!("Demarrage NiTriTe 8.77.0");
 
     let config = AppConfig::load();
     let app_state = AppState::new(config);
@@ -418,8 +418,6 @@ pub fn run() {
             install_package_manager,
             // Périphériques
             open_device_manager,
-            // Benchmark GPU
-            run_gpu_benchmark,
             // BIOS / Carte mère (étendus)
             get_bios_extended,
             get_motherboard_extended,

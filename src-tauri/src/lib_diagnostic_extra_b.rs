@@ -21,51 +21,6 @@ async fn open_device_manager(_device_class: String) -> Result<(), String> {
     }).await.map_err(|e| e.to_string())?
 }
 
-/// Benchmark GPU simple via OpenCL/D3D enumeration + mesure temps
-#[tauri::command]
-async fn run_gpu_benchmark() -> Result<serde_json::Value, String> {
-    tokio::task::spawn_blocking(|| {
-        #[cfg(target_os = "windows")]
-        {
-            let ps = r#"
-$result = @{}
-try {
-    $gpus = Get-WmiObject -Class Win32_VideoController -ErrorAction SilentlyContinue
-    $result.gpu_name = if ($gpus) { [string]($gpus | Select-Object -First 1 -ExpandProperty Name) } else { "N/A" }
-    $result.gpu_vram_mb = if ($gpus) { [long]($gpus | Select-Object -First 1 -ExpandProperty AdapterRAM) / 1MB } else { 0 }
-    $result.gpu_driver = if ($gpus) { [string]($gpus | Select-Object -First 1 -ExpandProperty DriverVersion) } else { "N/A" }
-    # Test de performance simple: boucle de calcul mathématique sur 2 secondes
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $iterations = 0
-    $dummy = 0.0
-    while ($sw.Elapsed.TotalSeconds -lt 2) {
-        for ($i = 0; $i -lt 10000; $i++) {
-            $dummy += [Math]::Sqrt($i * 1.5 + 0.1) * [Math]::Sin($i * 0.001)
-        }
-        $iterations++
-    }
-    $sw.Stop()
-    $ops_per_sec = [long](($iterations * 10000) / $sw.Elapsed.TotalSeconds)
-    $result.ops_per_second = $ops_per_sec
-    $result.test_duration_ms = [long]$sw.Elapsed.TotalMilliseconds
-    $result.score = [long]($ops_per_sec / 1000)  # Score en KOPS
-    $result.rating = if ($ops_per_sec -gt 50000000) { "Excellent" } elseif ($ops_per_sec -gt 20000000) { "Bon" } elseif ($ops_per_sec -gt 5000000) { "Moyen" } else { "Faible" }
-} catch { $result.error = $_.Exception.Message }
-$result | ConvertTo-Json -Compress
-"#;
-            let out = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-Command", ps])
-                .creation_flags(0x08000000)
-                .output()
-                .map_err(|e| e.to_string())?;
-            let text = crate::maintenance::commands::decode_output(&out.stdout).trim().to_string();
-            serde_json::from_str(&text).map_err(|e| e.to_string())
-        }
-        #[cfg(not(target_os = "windows"))]
-        Err("Non supporté".to_string())
-    }).await.map_err(|e| e.to_string())?
-}
-
 /// Récupère les informations étendues BIOS (TPM, Secure Boot, type firmware)
 #[tauri::command]
 async fn get_bios_extended() -> Result<serde_json::Value, String> {

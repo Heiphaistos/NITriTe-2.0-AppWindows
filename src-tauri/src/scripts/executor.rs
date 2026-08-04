@@ -454,8 +454,31 @@ Select-Object Subject, NotAfter, Thumbprint | Format-Table -AutoSize"#, false),
         script("Lister taches planifiees", "Affiche toutes les taches planifiees activees", "Diagnostic", "powershell",
             "Get-ScheduledTask | Where-Object {$_.State -ne 'Disabled'} | Select-Object TaskName, TaskPath, State | Sort-Object TaskPath | Format-Table -AutoSize", false),
         script("Infos GPU", "Affiche les specifications de la carte graphique", "Diagnostic", "powershell",
-            r#"Get-WmiObject Win32_VideoController | Select-Object Name, DriverVersion, AdapterRAM, VideoProcessor |
-ForEach-Object { $_.AdapterRAM = [math]::Round($_.AdapterRAM/1GB,1); $_ } | Format-List"#, false),
+            // AdapterRAM (WMI, uint32) plafonne a ~4095 Mo pour tout GPU dedie >= 4 Go quel que soit
+            // le fabricant : VRAM lue en priorite depuis le registre pilote (QWORD 64 bits), meme
+            // methode que le reste de l'app (system_detailed.rs / hw_extended.rs / monitor.rs).
+            r#"$regMap = @{}
+Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}" -EA SilentlyContinue |
+    Where-Object { $_.PSChildName -match '^\d{4}$' } | ForEach-Object {
+        $rp = Get-ItemProperty $_.PSPath -EA SilentlyContinue
+        if ($rp -and $rp.DriverDesc) { $regMap[[string]$rp.DriverDesc] = $rp }
+    }
+Get-WmiObject Win32_VideoController | Select-Object Name, DriverVersion, VideoProcessor, @{N='VRAM_GB';E={
+    $vramBytes = 0
+    $rp = $regMap[[string]$_.Name]
+    if ($rp) {
+        try {
+            if ($rp.'HardwareInformation.qwMemorySize') {
+                $v = [long]$rp.'HardwareInformation.qwMemorySize'; if ($v -gt 1MB) { $vramBytes = $v }
+            }
+            if ($vramBytes -le 0 -and $rp.'HardwareInformation.MemorySize') {
+                $v = [long]$rp.'HardwareInformation.MemorySize'; if ($v -gt 1MB) { $vramBytes = $v }
+            }
+        } catch {}
+    }
+    if ($vramBytes -le 0 -and $_.AdapterRAM -gt 0) { $vramBytes = [long][uint32]$_.AdapterRAM }
+    [math]::Round($vramBytes/1GB,1)
+}} | Format-List"#, false),
 
         // ═══════════════════════════════════════════════════════
         // SECURITE
