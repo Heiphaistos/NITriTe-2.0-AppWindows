@@ -4,6 +4,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { invoke } from "@/utils/invoke";
 import type { CommandResult } from "@/types/diagnostic";
 import { listen } from "@tauri-apps/api/event";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import NCard from "@/components/ui/NCard.vue";
 import NButton from "@/components/ui/NButton.vue";
 import NBadge from "@/components/ui/NBadge.vue";
@@ -72,6 +73,14 @@ async function loadQuarantine() {
 }
 
 async function clearQuarantineEntry(name: string | null) {
+  // Suppression permanente et irréversible — la quarantaine existe justement
+  // comme alternative récupérable à la suppression directe, donc la vider
+  // mérite la même confirmation que les autres suppressions définitives du
+  // repo (deleteDll, deleteTask, removeStartup...).
+  const msg = name
+    ? `Supprimer définitivement "${name}" de la quarantaine ?\n\nCette action est irréversible.`
+    : "Vider toute la quarantaine ?\n\nTous les éléments seront supprimés définitivement. Cette action est irréversible.";
+  if (!(await confirm(msg, { title: "Nitrite", kind: "warning" }))) return;
   try {
     await invoke("clear_quarantine", { entryName: name });
     await loadQuarantine();

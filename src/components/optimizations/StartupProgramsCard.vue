@@ -6,6 +6,7 @@ import NButton from "@/components/ui/NButton.vue";
 import NSpinner from "@/components/ui/NSpinner.vue";
 import NBadge from "@/components/ui/NBadge.vue";
 import { useNotificationStore } from "@/stores/notifications";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { Rocket, RefreshCw, XCircle } from "lucide-vue-next";
 
 const notify = useNotificationStore();
@@ -30,6 +31,11 @@ async function load() {
 }
 
 async function disable(prog: StartupProgram) {
+  // "Désactiver" est trompeur : le backend fait Remove-ItemProperty (voir
+  // maintenance/cleanup.rs) — la valeur de registre est réellement supprimée,
+  // pas juste basculée. Même sévérité que les autres suppressions du repo
+  // qui demandent déjà confirmation (deleteTask, deleteDll...).
+  if (!(await confirm(`Retirer "${prog.name}" du démarrage ?\n\nL'entrée de registre sera supprimée.`, { title: "Nitrite", kind: "warning" }))) return;
   try {
     await invoke("disable_startup_program", { name: prog.name, location: prog.location });
     notify.success(`${prog.name} désactivé du démarrage`);
