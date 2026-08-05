@@ -395,6 +395,17 @@ pub async fn install_driver(inf_path: String) -> DriverInstallResult {
         .unwrap_or_default()
 }
 
+// Codes de sortie pnputil documentés : 0=succès, 1/2/3=succès (reboot requis/en
+// cours/en attente), 259=succès sans changement (ERROR_NO_MORE_ITEMS — pilote
+// déjà publié/à jour, rien à faire). Vérifié en direct : réinstaller un
+// pilote déjà présent renvoie le code 259 avec « Package de pilotes ajouté.
+// (Existe déjà dans le système) » / « à jour » — un vrai succès. L'ancien
+// check (`status.success() || contains("installed")`, mot anglais absent en
+// sortie FR) le classait à tort en échec.
+fn is_pnputil_success(code: Option<i32>) -> bool {
+    matches!(code, Some(0) | Some(1) | Some(2) | Some(3) | Some(259))
+}
+
 fn install_driver_blocking(inf_path: String) -> DriverInstallResult {
     let inf_clean = inf_path.replace('"', "");
     if !Path::new(&inf_clean).exists() {
@@ -417,7 +428,7 @@ fn install_driver_blocking(inf_path: String) -> DriverInstallResult {
             let combined = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
             return DriverInstallResult {
                 inf_path: inf_clean,
-                success: o.status.success() || combined.to_lowercase().contains("installed"),
+                success: is_pnputil_success(o.status.code()),
                 output: combined.chars().take(2000).collect(),
                 duration_secs: duration,
             };
@@ -704,6 +715,37 @@ mod tests {
         assert!(provider.is_empty());
         assert!(version.is_empty());
         assert!(date.is_empty());
+    }
+
+    // ── is_pnputil_success ────────────────────────────────────────────────────
+
+    #[test]
+    fn pnputil_success_on_clean_exit() {
+        assert!(is_pnputil_success(Some(0)));
+    }
+
+    #[test]
+    fn pnputil_success_on_no_action_necessary() {
+        // Cas vérifié en direct : pilote déjà publié/à jour → 259, pas un échec.
+        assert!(is_pnputil_success(Some(259)));
+    }
+
+    #[test]
+    fn pnputil_success_on_reboot_codes() {
+        assert!(is_pnputil_success(Some(1)));
+        assert!(is_pnputil_success(Some(2)));
+        assert!(is_pnputil_success(Some(3)));
+    }
+
+    #[test]
+    fn pnputil_failure_on_real_error_code() {
+        // Cas vérifié en direct : INF invalide/non signé → 123, un vrai échec.
+        assert!(!is_pnputil_success(Some(123)));
+    }
+
+    #[test]
+    fn pnputil_failure_on_missing_code() {
+        assert!(!is_pnputil_success(None));
     }
 
     // ── strip_hw_id_rev ───────────────────────────────────────────────────────
