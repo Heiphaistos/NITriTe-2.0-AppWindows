@@ -2,7 +2,7 @@ use serde::Serialize;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-use super::{parse_json_arr, ps};
+use super::{parse_json_arr, ps, ps_ok};
 
 // ─── Security Quick Actions ───────────────────────────────────────────────────
 
@@ -42,7 +42,13 @@ pub async fn update_defender_signatures() -> Result<String, String> {
 }
 
 fn update_defender_signatures_blocking() -> Result<String, String> {
-    ps("Update-MpSignature -ErrorAction Stop; 'Définitions mises à jour'")
+    // ps_ok() (pas ps()) : meme piege que quick_uninstall_software_blocking —
+    // ps() ignore le code de sortie, donc un echec reel de Update-MpSignature
+    // (pas de connexion, service Defender arrete, etc.) etait rapporte comme
+    // un succes malgre -ErrorAction Stop. Verifie en direct : une erreur
+    // terminante non rattrapee via -ErrorAction Stop sort bien avec un code
+    // non-nul (1), que ps_ok() detecte correctement.
+    ps_ok("Update-MpSignature -ErrorAction Stop; 'Définitions mises à jour'")
 }
 
 // Anti-freeze : PowerShell est bloquant — jamais inline sur le thread de commande.
@@ -75,6 +81,12 @@ pub async fn quick_uninstall_software(name: String) -> Result<String, String> {
 
 fn quick_uninstall_software_blocking(name: String) -> Result<String, String> {
     let safe = name.replace('\'', "''");
+    // ps_ok() (pas ps()) : ps() renvoie Ok des que powershell.exe demarre, quel
+    // que soit le code de sortie du script — inutilisable ici. Sans ca, ni les
+    // throw ("app introuvable"/"chaine introuvable") ni un desinstalleur qui
+    // echoue reellement (code de sortie de Start-Process -PassThru auparavant
+    // jete via Out-Null) ne remontaient jamais comme un echec : la fonction
+    // rapportait toujours "Desinstallation lancee" telle quelle.
     let script = format!(r#"
 $paths = @(
     'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -83,18 +95,25 @@ $paths = @(
 )
 $pat = '*' + [Management.Automation.WildcardPattern]::Escape('{safe}') + '*'
 $app = Get-ItemProperty $paths -ErrorAction SilentlyContinue | Where-Object {{ $_.DisplayName -like $pat }} | Select-Object -First 1
-if (-not $app) {{ throw 'Application non trouvée dans le registre' }}
+if (-not $app) {{ Write-Output 'Application non trouvée dans le registre'; exit 1 }}
 $us = $app.UninstallString
-if (-not $us) {{ throw 'Chaîne de désinstallation introuvable' }}
+if (-not $us) {{ Write-Output 'Chaîne de désinstallation introuvable'; exit 1 }}
 if ($us -match 'MsiExec') {{
     $guid = [regex]::Match($us, '\{{[^}}]+\}}').Value
-    Start-Process msiexec.exe -ArgumentList "/x $guid /quiet /norestart" -Wait -PassThru | Out-Null
+    $proc = Start-Process msiexec.exe -ArgumentList "/x $guid /quiet /norestart" -Wait -PassThru
+    $code = $proc.ExitCode
 }} else {{
-    Start-Process cmd.exe -ArgumentList "/c `"$us`" /S /SILENT /VERYSILENT /NORESTART" -Wait -PassThru | Out-Null
+    $proc = Start-Process cmd.exe -ArgumentList "/c `"$us`" /S /SILENT /VERYSILENT /NORESTART" -Wait -PassThru
+    $code = $proc.ExitCode
 }}
-"Désinstallation lancée pour : $($app.DisplayName)"
+if ($code -eq 0 -or $code -eq 3010) {{
+    "Désinstallation réussie : $($app.DisplayName)"
+}} else {{
+    Write-Output "Désinstallation possiblement échouée (code $code) : $($app.DisplayName)"
+    exit 1
+}}
 "#);
-    ps(&script)
+    ps_ok(&script)
 }
 
 // ─── All Product Keys ─────────────────────────────────────────────────────────
