@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
-use super::{parse_json_arr, ps, ps_with_args};
+use super::{parse_json_arr, ps, ps_ok, ps_with_args};
 
 // ─── Hash Fichier ─────────────────────────────────────────────────────────────
 
@@ -191,7 +191,14 @@ pub async fn flush_dns_cache() -> Result<String, String> {
 }
 
 fn flush_dns_cache_blocking() -> Result<String, String> {
-    ps("Clear-DnsClientCache; 'DNS cache vidé avec succès'")
+    // ps_ok() + -ErrorAction Stop (pas ps() seule) : les erreurs de cmdlet
+    // PowerShell sont non-terminantes par defaut — verifie en direct qu'un
+    // Get-Item sur un chemin absent laisse la suite du script s'executer
+    // normalement (exit code 0 malgre l'erreur). Sans -ErrorAction Stop, un
+    // Clear-DnsClientCache qui echoue (droits insuffisants, service DNS
+    // Client arrete) laissait quand meme s'imprimer 'DNS cache vide avec
+    // succes' — meme piege que update_defender_signatures_blocking (cycle 69).
+    ps_ok("Clear-DnsClientCache -ErrorAction Stop; 'DNS cache vidé avec succès'")
 }
 
 // Anti-freeze : Test-Connection est bloquant — jamais inline sur le thread de commande.
