@@ -131,6 +131,25 @@ async fn ai_stop_llamacpp(state: tauri::State<'_, AppState>) -> Result<(), Strin
 
 #[tauri::command]
 async fn ai_llamacpp_status(state: tauri::State<'_, AppState>) -> Result<bool, NiTriTeError> {
+    // Vérifie d'abord que le process est toujours vivant. Sans ce check, un
+    // crash immédiat du serveur (CPU sans AVX2, DLL manquante, modèle
+    // corrompu) est indiscernable d'un chargement de modèle simplement lent
+    // via le seul health check HTTP : le frontend (AiAgentsPage.vue) attend
+    // les 60 tentatives complètes (60s) avant d'abandonner, avec un message
+    // trompeur "toujours en cours de chargement" alors que le process
+    // n'existe plus depuis le tout début.
+    {
+        let mut proc = state.llamacpp_process.lock().await;
+        if let Some(child) = proc.as_mut() {
+            if let Ok(Some(status)) = child.try_wait() {
+                *proc = None;
+                return Err(NiTriTeError::System(format!(
+                    "Le serveur llama.cpp s'est arrêté prématurément (code {:?})",
+                    status.code()
+                )));
+            }
+        }
+    }
     let port = { state.config.lock().await.llamacpp_port };
     Ok(ai::llamacpp::is_server_ready(port).await)
 }

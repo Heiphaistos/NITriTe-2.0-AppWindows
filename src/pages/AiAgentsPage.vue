@@ -124,8 +124,16 @@ async function startServer() {
       if (serverStartCancelled.value) break;
       await new Promise(r => setTimeout(r, 1000));
       if (serverStartCancelled.value) break;
-      const ok = await invoke<boolean>("ai_llamacpp_status").catch(() => false);
-      if (ok) { serverRunning.value = true; notify.success("llama.cpp", "Serveur prêt !"); break; }
+      // ai_llamacpp_status rejette explicitement si le process a crashé —
+      // distinct d'un simple "pas encore prêt" (Ok(false)) : on arrête le
+      // polling immédiatement au lieu d'attendre les 60 tentatives.
+      try {
+        const ok = await invoke<boolean>("ai_llamacpp_status");
+        if (ok) { serverRunning.value = true; notify.success("llama.cpp", "Serveur prêt !"); break; }
+      } catch (e: unknown) {
+        notify.error("llama.cpp", String(e));
+        break;
+      }
     }
     if (!serverRunning.value && !serverStartCancelled.value)
       notify.warning("llama.cpp", "Serveur démarré — attente du chargement du modèle.");
