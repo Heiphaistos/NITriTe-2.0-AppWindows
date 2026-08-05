@@ -23,12 +23,13 @@ async function load() {
   try {
     const data = await invoke<BrowserCache[]>("get_browser_cache_sizes");
     browsers.value = data.filter(b => b.detected).map(b => ({ ...b, selected: true }));
-  } catch {
-    browsers.value = [
-      { id: "chrome", name: "Google Chrome", detected: true, cache_size_mb: 245.3, selected: true },
-      { id: "edge",   name: "Microsoft Edge", detected: true, cache_size_mb: 128.7, selected: true },
-      { id: "firefox",name: "Mozilla Firefox", detected: true, cache_size_mb: 89.2, selected: true },
-    ];
+  } catch (e: unknown) {
+    // Ne jamais afficher de données fictives comme si elles étaient réelles :
+    // l'ancien fallback montrait 3 navigateurs inventés (245.3/128.7/89.2 MB)
+    // en cas d'échec de détection, masquant une vraie erreur derrière un
+    // faux succès plausible.
+    browsers.value = [];
+    notify.error("Détection des caches impossible", String(e));
   } finally { loading.value = false; }
 }
 

@@ -18,12 +18,14 @@ async function load() {
   loading.value = true;
   try {
     programs.value = await invoke<StartupProgram[]>("get_startup_programs");
-  } catch {
-    programs.value = [
-      { name: "Discord",      command: "C:\\...\\Discord\\Update.exe --processStart Discord.exe", location: "HKCU\\Run", user: "Utilisateur" },
-      { name: "OneDrive",     command: "C:\\...\\OneDrive.exe /background",                       location: "HKCU\\Run", user: "Utilisateur" },
-      { name: "SecurityHealth", command: "C:\\Windows\\System32\\SecurityHealthSystray.exe",      location: "HKLM\\Run", user: "Systeme" },
-    ];
+  } catch (e: unknown) {
+    // Ne jamais afficher de données fictives comme si elles étaient réelles :
+    // l'ancien fallback montrait 3 programmes inventés (Discord/OneDrive/
+    // SecurityHealth) avec un bouton "Désactiver" bien réel et fonctionnel en
+    // cas d'échec de détection — masquant une vraie erreur derrière un faux
+    // succès plausible, avec une action destructive dessus.
+    programs.value = [];
+    notify.error("Détection des programmes au démarrage impossible", String(e));
   } finally { loading.value = false; }
 }
 
