@@ -316,8 +316,21 @@ async function checkAppUpdate(app: AppItem) {
     });
     const out = result?.stdout ?? "";
     const low = out.toLowerCase();
-    if (out.includes("No applicable upgrade") || low.includes("aucune mise")) {
+    // winget renvoie un exit code non-zéro même quand l'app est déjà à jour
+    // (quirk winget confirmé en direct sur cette machine : "upgrade --id Git.Git"
+    // à jour → exit -1978335189) — seul le texte distingue les 3 issues réelles.
+    // Sur Windows FR, winget répond "Mise à niveau disponible introuvable." /
+    // "Aucune version de package plus récente n'est disponible...", pas la string
+    // anglaise "No applicable upgrade" attendue jusqu'ici (jamais présente en FR
+    // → cette branche succès n'était jamais atteinte sur un poste francophone).
+    const upToDate = out.includes("No applicable upgrade")
+      || low.includes("disponible introuvable")
+      || low.includes("n'est disponible à partir des sources");
+    const notFound = low.includes("ne correspond aux critères") || low.includes("no installed package found");
+    if (upToDate) {
       notifications.success(`${app.name} est à jour`);
+    } else if (notFound) {
+      notifications.error(`${app.name} introuvable via WinGet`, "L'ID WinGet ne correspond à aucun package installé.");
     } else if (out.trim()) {
       notifications.info(`MAJ disponible pour ${app.name}`, out.split("\n").slice(0, 3).join(" "));
     } else {
