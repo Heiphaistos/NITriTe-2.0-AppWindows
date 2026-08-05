@@ -196,6 +196,11 @@ const byPublisher = computed(() => {
         <table class="data-table">
           <thead><tr><th>#</th><th>Nom</th><th>Version</th><th>Éditeur</th><th>Date install.</th><th>Taille</th><th>Action</th></tr></thead>
           <tbody>
+            <tr v-if="filteredSoftware.length === 0">
+              <td colspan="7" class="muted" style="text-align:center;padding:16px 8px">
+                {{ softwareList.length === 0 ? 'Aucun logiciel détecté.' : 'Aucun logiciel ne correspond à la recherche.' }}
+              </td>
+            </tr>
             <tr v-for="(s, i) in filteredSoftware.slice(0, 300)" :key="`sw-${s.name}-${s.publisher}`" :class="{ 'uninstall-row': confirmUninstall === s.name }">
               <td class="muted">{{ i + 1 }}</td>
               <td style="font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</td>
@@ -271,6 +276,11 @@ const byPublisher = computed(() => {
         <table class="data-table">
           <thead><tr><th>Variable</th><th>Valeur</th><th>Portée</th><th>Actions</th></tr></thead>
           <tbody>
+            <tr v-if="filteredEnv.length === 0">
+              <td colspan="4" class="muted" style="text-align:center;padding:16px 8px">
+                {{ envVars.length === 0 ? 'Aucune variable d\'environnement détectée.' : 'Aucune variable ne correspond au filtre.' }}
+              </td>
+            </tr>
             <tr v-for="e in filteredEnv" :key="`env-${e.name}-${e.var_type}`">
               <td><code style="font-size:11px">{{ e.name }}</code></td>
               <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:12px;color:var(--text-secondary)">
