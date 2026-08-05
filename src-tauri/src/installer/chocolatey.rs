@@ -7,6 +7,7 @@ use tauri::Emitter;
 
 use crate::error::NiTriTeError;
 use crate::installer::winget::InstallResult;
+use crate::maintenance::commands::decode_output;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChocoPackage {
@@ -50,7 +51,10 @@ pub fn list_chocolatey_upgrades() -> Result<Vec<ChocoPackage>, NiTriTeError> {
         .output()
         .map_err(|e| NiTriTeError::System(format!("Chocolatey introuvable: {}", e)))?;
 
-    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    // decode_output : par cohérence avec bootstrap_chocolatey() (cassé confirmé
+    // en direct sur cette machine) — substitution sûre même si non déclenché
+    // par les paquets choco actuels (majoritairement anglophones).
+    let text = decode_output(&output.stdout);
     let mut packages = Vec::new();
 
     for line in text.lines() {
@@ -89,7 +93,7 @@ pub fn upgrade_chocolatey_all(excluded: Vec<String>) -> Result<ChocoUpgradeResul
         .output()
         .map_err(|e| NiTriTeError::System(format!("Erreur upgrade choco: {}", e)))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stdout = decode_output(&output.stdout);
     let success = output.status.success();
 
     // Nombre de paquets mis à jour : choco termine par une ligne récapitulative
@@ -115,7 +119,7 @@ pub fn upgrade_chocolatey_all(excluded: Vec<String>) -> Result<ChocoUpgradeResul
     let message = if success {
         format!("{} paquet(s) mis à jour", upgraded)
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = decode_output(&output.stderr);
         format!("Erreur: {}", stderr.lines().next().unwrap_or("inconnue"))
     };
 
@@ -142,7 +146,10 @@ pub fn bootstrap_chocolatey() -> Result<(), NiTriTeError> {
         .output()
         .map_err(|e| NiTriTeError::System(format!("Erreur bootstrap Chocolatey: {}", e)))?;
     if !output.status.success() || !check_chocolatey() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        // decode_output : message d'erreur PowerShell réel (ex. « Impossible
+        // de se connecter au serveur distant ») corrompu par from_utf8_lossy —
+        // confirmé en direct sur cette machine.
+        let stderr = decode_output(&output.stderr);
         return Err(NiTriTeError::System(format!("Installation de Chocolatey echouee: {}", stderr.lines().next().unwrap_or("inconnue"))));
     }
     Ok(())
@@ -169,7 +176,7 @@ pub fn search_choco_id(name: &str) -> Option<String> {
         if exact { args.push("--exact"); }
         let output = Command::new(choco_exe()).args(&args).creation_flags(0x08000000).output().ok()?;
         if !output.status.success() { return None; }
-        let text = String::from_utf8_lossy(&output.stdout).to_string();
+        let text = decode_output(&output.stdout);
         Some(text.lines().filter_map(|l| {
             let mut parts = l.splitn(2, '|');
             let id = parts.next()?.trim().to_string();
