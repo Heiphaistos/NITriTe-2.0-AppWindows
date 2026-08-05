@@ -5,9 +5,14 @@ import type { CommandResult } from "@/types/diagnostic";
 import NCard from "@/components/ui/NCard.vue";
 import NButton from "@/components/ui/NButton.vue";
 import NBadge from "@/components/ui/NBadge.vue";
-import { ShieldCheck, ShieldOff } from "lucide-vue-next";
+import { ShieldCheck, ShieldOff, AlertTriangle } from "lucide-vue-next";
 
-interface VpnStatus { detected: boolean; adapter_name: string; details: string; }
+// `detected` est `null` quand la vérification elle-même a échoué (commande PS
+// en erreur, sortie vide/non-JSON...) — distinct de `false` (vérifié, aucun
+// VPN trouvé). Auparavant les deux cas étaient confondus et affichaient le
+// même badge vert "Pas de VPN", un faux résultat négatif rassurant alors que
+// la détection n'avait en réalité pas pu s'exécuter.
+interface VpnStatus { detected: boolean | null; adapter_name: string; details: string; }
 
 const vpnChecking = ref(false);
 const vpnStatus   = ref<VpnStatus | null>(null);
@@ -42,7 +47,7 @@ if ($found) {
       details: parsed.desc || "",
     };
   } catch {
-    vpnStatus.value = { detected: false, adapter_name: "", details: "Impossible de verifier" };
+    vpnStatus.value = { detected: null, adapter_name: "", details: "La vérification a échoué (commande indisponible ou bloquée)." };
   }
   vpnChecking.value = false;
 }
@@ -56,10 +61,10 @@ if ($found) {
         <span>Detection VPN</span>
         <NBadge
           v-if="vpnStatus"
-          :variant="vpnStatus.detected ? 'warning' : 'success'"
+          :variant="vpnStatus.detected === null ? 'neutral' : vpnStatus.detected ? 'warning' : 'success'"
           style="margin-left:auto"
         >
-          {{ vpnStatus.detected ? "VPN Actif" : "Pas de VPN" }}
+          {{ vpnStatus.detected === null ? "Vérification échouée" : vpnStatus.detected ? "VPN Actif" : "Pas de VPN" }}
         </NBadge>
       </div>
     </template>
@@ -68,10 +73,10 @@ if ($found) {
         <ShieldCheck :size="14" />
         Analyser les adaptateurs VPN
       </NButton>
-      <div v-if="vpnStatus" class="vpn-result" :class="vpnStatus.detected ? 'vpn-active' : 'vpn-none'">
-        <component :is="vpnStatus.detected ? ShieldOff : ShieldCheck" :size="18" />
+      <div v-if="vpnStatus" class="vpn-result" :class="vpnStatus.detected === null ? 'vpn-unknown' : vpnStatus.detected ? 'vpn-active' : 'vpn-none'">
+        <component :is="vpnStatus.detected === null ? AlertTriangle : vpnStatus.detected ? ShieldOff : ShieldCheck" :size="18" />
         <div class="vpn-text">
-          <span class="vpn-title">{{ vpnStatus.detected ? "VPN detecte" : "Aucun VPN detecte" }}</span>
+          <span class="vpn-title">{{ vpnStatus.detected === null ? "Vérification impossible" : vpnStatus.detected ? "VPN detecte" : "Aucun VPN detecte" }}</span>
           <span v-if="vpnStatus.adapter_name" class="vpn-sub font-mono">
             Adaptateur : {{ vpnStatus.adapter_name }}
           </span>
@@ -92,6 +97,7 @@ if ($found) {
 .vpn-result { display:flex; align-items:flex-start; gap:12px; padding:12px 16px; border-radius:var(--radius-md); border:1px solid var(--border); }
 .vpn-active { background:rgba(245,158,11,.08); border-color:rgba(245,158,11,.35); color:var(--warning); }
 .vpn-none { background:rgba(34,197,94,.08); border-color:rgba(34,197,94,.25); color:var(--success); }
+.vpn-unknown { background:rgba(245,158,11,.08); border-color:rgba(245,158,11,.25); color:var(--warning); }
 .vpn-text { display:flex; flex-direction:column; gap:3px; }
 .vpn-title { font-size:13px; font-weight:600; color:var(--text-primary); }
 .vpn-sub { font-size:12px; color:var(--text-muted); }
