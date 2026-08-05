@@ -143,6 +143,7 @@
           </div>
         </div>
       </div>
+      <div v-else-if="largeHasScanned" class="cl-finder-loading">Aucun fichier volumineux trouvé pour ce dossier/seuil.</div>
     </div>
   </div>
 </template>
@@ -165,7 +166,7 @@ const cleaning = ref<string | null>(null); const selectedTargets = ref(new Set<s
 const results = ref<Record<string, CleanResult>>({})
 const cleanProgress = ref(0); const cleanTotal = ref(0)
 const largeFolder = ref('C:\\Users'); const minSizeMb = ref(100)
-const largLoading = ref(false); const largeFiles = ref<LargeFile[]>([])
+const largLoading = ref(false); const largeFiles = ref<LargeFile[]>([]); const largeHasScanned = ref(false)
 
 // Browser cache
 const browserCaches = ref<BrowserCacheInfo[]>([])
@@ -252,7 +253,7 @@ async function cleanSelected() {
 }
 
 async function findLarge() {
-  largLoading.value = true; largeFiles.value = []
+  largLoading.value = true; largeHasScanned.value = true; largeFiles.value = []
   try { largeFiles.value = await invoke<LargeFile[]>('get_large_files', { folder: largeFolder.value, minSizeMb: minSizeMb.value }) }
   catch (e: unknown) { if (isTauriContext()) notify.error("Recherche grands fichiers", (e instanceof Error ? e.message : String(e)).slice(0, 120)); }
   finally { largLoading.value = false }
