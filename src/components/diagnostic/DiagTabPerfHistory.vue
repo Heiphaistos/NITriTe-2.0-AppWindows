@@ -140,7 +140,12 @@
         <button class="ph-btn" :disabled="topLoading" @click="loadTop"><RefreshCw :size="12" /> Actualiser</button>
       </div>
       <div v-if="topLoading" class="ph-top-loading"><div class="ph-spinner" /> Chargement...</div>
-      <div v-else-if="topProcs.length > 0" class="ph-top-list">
+      <!-- get_top_processes_by_cpu ne remonte jamais d'erreur au frontend (Vec<TopProcess>
+           brut, pas de Result) : un échec interne PS (script/JSON) retombe silencieusement
+           sur un vec vide via unwrap_or_default(), sans exception ni toast. Sans cette
+           branche, ce panneau restait en permanence vide sans aucune explication. -->
+      <div v-else-if="!topProcs.length" class="ph-top-loading">Aucun processus détecté. Cliquez "Actualiser" pour réessayer.</div>
+      <div v-else class="ph-top-list">
         <div v-for="(p, i) in topProcs" :key="p.pid" class="ph-top-proc">
           <span class="ph-proc-rank" :class="i < 3 ? 'rank-top' : ''">#{{ i + 1 }}</span>
           <div class="ph-proc-info">
