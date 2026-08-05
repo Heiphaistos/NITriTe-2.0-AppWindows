@@ -149,7 +149,8 @@ onMounted(load);
     <template v-else-if="report">
       <div v-if="!report.bt_available" class="no-bt-banner">
         <BluetoothOff :size="16" />
-        <span>Aucun adaptateur Bluetooth détecté sur cette machine.</span>
+        <span v-if="report.error">Erreur de lecture Bluetooth : {{ report.error }}</span>
+        <span v-else>Aucun adaptateur Bluetooth détecté sur cette machine.</span>
       </div>
 
       <!-- Adaptateurs -->
