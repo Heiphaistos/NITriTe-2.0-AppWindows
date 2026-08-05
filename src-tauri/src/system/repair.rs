@@ -166,11 +166,24 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
         "firewall_reset"  => Some(("Reset Pare-feu Windows",        "netsh advfirewall reset".to_string())),
 
         // Cache & Nettoyage
+        // Même famille que print_spooler/windows_update_reset/search_reindex :
+        // `taskkill & del & del & start` en cmd.exe masquait tout échec de
+        // suppression (fichier encore verrouillé juste après le kill
+        // d'Explorer) derrière le `start explorer.exe` final qui réussit
+        // presque toujours. Vérifié en direct avec le même repro que
+        // print_spooler (fichier verrouillé + del /F /Q + commande suivante
+        // réussie) : code de sortie 0 alors qu'un fichier restait. Corrigé
+        // en vérifiant qu'aucun fichier iconcache*/thumbcache* ne subsiste
+        // après la tentative de suppression.
         "icon_cache"      => Some(("Rebuild cache icônes", concat!(
-            "taskkill /F /IM explorer.exe & ",
-            "del /F /Q \"%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\iconcache*.db\" & ",
-            "del /F /Q \"%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\thumbcache*.db\" & ",
-            "start explorer.exe"
+            "powershell -Command \"",
+            "taskkill /F /IM explorer.exe; ",
+            "$d=$env:LOCALAPPDATA+'\\Microsoft\\Windows\\Explorer'; ",
+            "Get-ChildItem $d -Filter 'iconcache*.db' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; ",
+            "Get-ChildItem $d -Filter 'thumbcache*.db' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; ",
+            "$remaining=@(Get-ChildItem $d -Filter 'iconcache*.db' -ErrorAction SilentlyContinue).Count + @(Get-ChildItem $d -Filter 'thumbcache*.db' -ErrorAction SilentlyContinue).Count; ",
+            "Start-Process explorer.exe; ",
+            "if ($remaining -eq 0) { exit 0 } else { exit 1 }\""
         ).to_string())),
         "thumbnail_cache" => Some(("Vider cache miniatures", concat!(
             "powershell -Command \"",
