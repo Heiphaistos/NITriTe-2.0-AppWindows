@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
 import NButton from "@/components/ui/NButton.vue";
 import { Cpu, Layers, Settings, Terminal, CheckCircle, XCircle } from "lucide-vue-next";
@@ -50,6 +51,9 @@ function isValidSvcName(v: string) { return v.length > 0 && v.length <= 80 && /^
 async function killProcess() {
   if (!killPid.value) return;
   if (!isValidPid(String(killPid.value))) { output.value = "PID invalide — entrez un nombre."; lastSuccess.value = false; return; }
+  // Même pattern que DashboardPage.vue/DiagTabProcesses.vue (confirm() déjà
+  // présent sur leurs killProcess) — celui-ci n'en avait aucun.
+  if (!(await confirm(`Terminer le processus PID ${killPid.value} ?`, { title: "Nitrite", kind: "warning" }))) return;
   await run(`taskkill /f /pid ${killPid.value}`, `Terminer PID ${killPid.value}`);
 }
 
@@ -62,6 +66,9 @@ async function startService() {
 async function stopService() {
   if (!svcName.value) return;
   if (!isValidSvcName(svcName.value)) { output.value = "Nom de service invalide."; lastSuccess.value = false; return; }
+  // Même pattern que DiagTabProcesses.vue::ctrlService (confirm() déjà présent
+  // sur stop/restart, cycle 13) — celui-ci n'en avait aucun.
+  if (!(await confirm(`Arrêter le service "${svcName.value}" ?`, { title: "Nitrite", kind: "warning" }))) return;
   await run(`net stop "${svcName.value}"`, `Arrêter service ${svcName.value}`);
 }
 </script>
