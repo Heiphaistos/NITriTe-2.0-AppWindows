@@ -285,7 +285,8 @@ async function loadPartitions() {
     const parts: Partition[] = [];
     for (const disk of (info.disks ?? [])) {
       for (const p of (disk.partitions ?? [])) {
-        parts.push({ letter: "?", total_gb: p.total_gb ?? 0, used_gb: p.used_gb ?? 0, usage_percent: Math.round(p.usage_percent ?? 0), name: disk.name });
+        const letter = p.mount_point?.replace(/\\+$/, "") || "?";
+        parts.push({ letter, total_gb: p.total_gb ?? 0, used_gb: p.used_gb ?? 0, usage_percent: Math.round(p.usage_percent ?? 0), name: disk.name });
       }
     }
     if (parts.length) partitions.value = parts;
