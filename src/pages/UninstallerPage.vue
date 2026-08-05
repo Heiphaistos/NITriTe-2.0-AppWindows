@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "UninstallerPage" });
 import { ref, computed, onMounted, defineAsyncComponent } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { csvCell } from "@/composables/useExportData";
 import { invoke } from "@/utils/invoke";
 import DiagBanner from "@/components/ui/DiagBanner.vue";
@@ -283,6 +284,13 @@ async function loadApps() {
 async function startUninstall() {
   const toUninstall = apps.value.filter(a => selected.value.has(appId(a)));
   if (!toUninstall.length) return;
+
+  // Cocher des cases est une sélection, pas un geste de consentement — contrairement
+  // au reste de l'app (killProcess, control_service, RestorePoint, ClonePage), cette
+  // désinstallation démarrait sans aucune confirmation explicite.
+  const names = toUninstall.map(a => a.name).join(", ");
+  const label = toUninstall.length > 1 ? `${toUninstall.length} applications` : "cette application";
+  if (!(await confirm(`Désinstaller ${label} ?\n\n${names}`, { title: "Nitrite", kind: "warning" }))) return;
 
   if (createRestoreBeforeUninstall.value) await doCreateRestorePoint();
 
