@@ -57,7 +57,13 @@ const drivesWithLetters = computed(() =>
 );
 const availableTargets = computed(() =>
   drivesWithLetters.value.filter(p =>
-    !p.is_system && !p.is_boot && p.letter !== sourceDrive.value
+    // p.letter garde le ':' (ex: "C:") alors que sourceDrive ne l'a pas (ex: "C",
+    // assigné via .replace(":", "") ligne 72 plus bas) — la comparaison brute ne
+    // matchait donc jamais et n'excluait jamais réellement la source par lettre.
+    // Sans impact pratique aujourd'hui (is_system/is_boot exclut déjà le lecteur
+    // système sur cet onglet), mais incohérent avec le reste du fichier qui
+    // normalise systématiquement via .replace(':', '') avant de comparer.
+    !p.is_system && !p.is_boot && p.letter.replace(':', '') !== sourceDrive.value
   )
 );
 const systemDrive = computed(() =>
