@@ -97,8 +97,17 @@ function onDrop(e: DragEvent) {
   const files = e.dataTransfer?.files;
   if (!files || files.length === 0) return;
   const f = files[0] as File & { path?: string };
-  const path = f.path || f.name;
-  if (path) hashPath(path);
+  // f.name est un simple nom de fichier ("rapport.pdf"), pas un chemin — le
+  // hacher tel quel enverrait hash_file sur un chemin relatif au CWD de l'app
+  // (jamais l'emplacement réel du fichier glissé), soit une erreur "introuvable"
+  // trompeuse, soit — pire — le hash d'un AUTRE fichier portant le même nom
+  // s'il en existe un dans le CWD. Sans f.path exploitable, mieux vaut refuser
+  // explicitement que deviner.
+  if (!f.path) {
+    notify.error("Chemin indisponible", "Impossible de récupérer le chemin réel du fichier déposé — utilisez le bouton de sélection.");
+    return;
+  }
+  hashPath(f.path);
 }
 
 function copyHash(hash: string) {
