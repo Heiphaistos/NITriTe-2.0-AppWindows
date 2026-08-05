@@ -4,6 +4,7 @@ use std::process::Command;
 use std::os::windows::process::CommandExt;
 
 use crate::error::NiTriTeError;
+use crate::maintenance::commands::decode_output;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CleanupResult {
@@ -82,7 +83,10 @@ pub fn get_startup_programs() -> Result<Vec<StartupEntry>, NiTriTeError> {
             "Get-CimInstance Win32_StartupCommand | Select-Object Name, Command, Location, User | ConvertTo-Json"])
         .creation_flags(0x08000000).output()?;
 
-    let text = String::from_utf8_lossy(&output.stdout);
+    // decode_output : le champ User (ex. « AUTORITE NT\Système », « SERVICE
+    // RÉSEAU ») est corrompu par from_utf8_lossy — confirmé en direct sur
+    // cette machine (comptes système intégrés eux-mêmes accentués).
+    let text = decode_output(&output.stdout);
     let trimmed = text.trim();
     // PowerShell retourne un objet JSON unique si un seul programme est trouvé
     let entries: Vec<serde_json::Value> = serde_json::from_str(trimmed)
@@ -161,7 +165,10 @@ Remove-ItemProperty -Path $regPath -Name $entryName -ErrorAction Stop"#,
             message: format!("{} retire du demarrage", name),
         })
     } else {
-        let err = String::from_utf8_lossy(&output.stderr);
+        // decode_output : message d'erreur PowerShell (ex. « La propriété ...
+        // n'existe pas dans le chemin d'accès ») corrompu par from_utf8_lossy —
+        // confirmé en direct sur cette machine.
+        let err = decode_output(&output.stderr);
         Err(NiTriTeError::System(format!("Impossible de desactiver {}: {}", name, err.trim())))
     }
 }
@@ -188,11 +195,17 @@ mod tests {
     fn disable_startup_allowed_hkcu_path_passes_validation() {
         // HKCU Run path is allowed — command may fail since we're in test,
         // but it must not fail at the validation stage (CommandDenied).
+        // "safe_app" n'existe pas dans le registre → exerce en pratique le
+        // vrai chemin d'erreur PowerShell (Remove-ItemProperty échoue), ce qui
+        // teste au passage que decode_output() ne corrompt pas le message
+        // d'erreur français (« La propriété ... n'existe pas dans le chemin
+        // d'accès » — mojibake confirmé avant fix via repro Rust direct).
         let r = disable_startup_program("safe_app", "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run");
         // Either Ok (unlikely in test env) or System error — not CommandDenied
         if let Err(e) = r {
             let msg = format!("{:?}", e);
             assert!(!msg.contains("CommandDenied"), "Expected validation to pass, got: {}", msg);
+            assert!(!msg.contains('\u{FFFD}'), "mojibake détecté dans le message d'erreur: {}", msg);
         }
     }
 
@@ -208,5 +221,20 @@ mod tests {
     fn disable_startup_empty_name_rejected() {
         let r = disable_startup_program("", "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run");
         assert!(r.is_err());
+    }
+
+    // Live, non-CI (ignorée par défaut) : confirme sur une vraie machine Windows
+    // que get_startup_programs() ne produit plus de mojibake sur le champ User
+    // (comptes système intégrés eux-mêmes accentués, ex. « AUTORITE NT\Système »,
+    // « SERVICE RÉSEAU » — corruption confirmée avant fix via repro Rust direct).
+    #[test]
+    #[ignore]
+    fn get_startup_programs_no_mojibake_on_real_data() {
+        let entries = get_startup_programs().expect("get_startup_programs failed");
+        let bad = entries.iter().find(|e|
+            e.name.contains('\u{FFFD}') || e.command.contains('\u{FFFD}') ||
+            e.location.contains('\u{FFFD}') || e.user.contains('\u{FFFD}')
+        );
+        assert!(bad.is_none(), "mojibake détecté dans une entrée réelle : {:?}", bad);
     }
 }
