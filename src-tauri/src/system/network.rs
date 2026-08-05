@@ -194,6 +194,28 @@ pub fn get_connections() -> Result<Vec<ConnectionInfo>, NiTriTeError> {
     }).collect())
 }
 
+/// Extrait le vrai pourcentage de perte depuis la ligne statistiques de ping.exe
+/// (FR: "perdus = N (perte P%)," / EN: "Lost = N (P% loss),"). Repli sur le
+/// pourcentage déduit du code de sortie (0/100) uniquement si la ligne est
+/// absente ou dans un format non reconnu — ne doit jamais arriver en pratique
+/// sur une sortie ping.exe Windows normale.
+fn parse_packet_loss_pct(text: &str, success: bool) -> f64 {
+    for line in text.lines() {
+        let ll = line.to_lowercase();
+        if ll.contains("perte") || ll.contains("perdus") || ll.contains("loss") || ll.contains("lost") {
+            if let Some(pct_idx) = line.find('%') {
+                let digits: String = line[..pct_idx].chars().rev()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<Vec<char>>().into_iter().rev().collect();
+                if let Ok(v) = digits.parse::<f64>() {
+                    return v;
+                }
+            }
+        }
+    }
+    if success { 0.0 } else { 100.0 }
+}
+
 pub fn ping_host(host: &str) -> Result<PingResult, NiTriTeError> {
     // Validation de l'hôte : lettres, chiffres, tirets, points, deux-points, crochets uniquement
     let host = host.trim();
@@ -234,7 +256,46 @@ pub fn ping_host(host: &str) -> Result<PingResult, NiTriTeError> {
         avg_ms: avg,
         min_ms: min,
         max_ms: max,
-        packet_loss: if success { 0.0 } else { 100.0 },
+        // Ancien code : packet_loss déduit du seul code de sortie (0.0 ou 100.0),
+        // alors que ping.exe sort en succès (0) dès qu'AU MOINS UNE réponse est
+        // reçue — une perte partielle (ex: 1 paquet perdu sur 4 = 25%, le cas le
+        // plus révélateur d'une connexion instable, celui que cet outil de
+        // diagnostic est censé détecter) était donc TOUJOURS rapportée comme 0%.
+        packet_loss: parse_packet_loss_pct(&text, success),
         success,
     })
+}
+
+#[cfg(test)]
+mod ping_tests {
+    use super::parse_packet_loss_pct;
+
+    // Sortie réelle capturée sur cette machine (ping -n 4 8.8.8.8, Windows FR) :
+    // "    Paquets : envoyés = 4, reçus = 4, perdus = 0 (perte 0%),"
+    #[test]
+    fn parses_real_french_zero_loss_line() {
+        let text = "Statistiques Ping pour 8.8.8.8:\n    Paquets : envoyes = 4, recus = 4, perdus = 0 (perte 0%),\n";
+        assert_eq!(parse_packet_loss_pct(text, true), 0.0);
+    }
+
+    #[test]
+    fn parses_french_partial_loss_line_masked_by_old_boolean_logic() {
+        // Perte partielle plausible (1/4 paquets) : exit code ping.exe reste 0
+        // (au moins une réponse reçue) donc l'ancien code aurait rapporté 0%
+        // au lieu du vrai 25% — exactement le bug corrigé ici.
+        let text = "Statistiques Ping pour 8.8.8.8:\n    Paquets : envoyes = 4, recus = 3, perdus = 1 (perte 25%),\n";
+        assert_eq!(parse_packet_loss_pct(text, true), 25.0);
+    }
+
+    #[test]
+    fn parses_english_loss_line() {
+        let text = "Ping statistics for 8.8.8.8:\n    Packets: Sent = 4, Received = 3, Lost = 1 (25% loss),\n";
+        assert_eq!(parse_packet_loss_pct(text, true), 25.0);
+    }
+
+    #[test]
+    fn falls_back_to_success_boolean_when_line_absent() {
+        assert_eq!(parse_packet_loss_pct("format inattendu sans ligne de perte", true), 0.0);
+        assert_eq!(parse_packet_loss_pct("format inattendu sans ligne de perte", false), 100.0);
+    }
 }
