@@ -14,6 +14,7 @@ const mftFiles = ref<RecoveredFile[]>([]);
 const loadingMft = ref(false);
 const mftDrive = ref("C");
 const ntfsDrives = ref<string[]>([]);
+const hasScanned = ref(false);
 
 async function loadDrives() {
   try { ntfsDrives.value = await invoke<string[]>("get_ntfs_drives"); }
@@ -27,7 +28,7 @@ async function scanMft() {
   try {
     mftFiles.value = await invoke<RecoveredFile[]>("scan_deleted_files", { drive: mftDrive.value });
   } catch (e: unknown) { notify.error("Erreur scan MFT", (e instanceof Error ? e.message : String(e)).slice(0, 120)); }
-  loadingMft.value = false;
+  loadingMft.value = false; hasScanned.value = true;
 }
 
 async function scanAllMft() {
@@ -35,7 +36,7 @@ async function scanAllMft() {
   try {
     mftFiles.value = await invoke<RecoveredFile[]>("scan_all_deleted_files");
   } catch (e: unknown) { notify.error("Erreur scan global", (e instanceof Error ? e.message : String(e)).slice(0, 120)); }
-  loadingMft.value = false;
+  loadingMft.value = false; hasScanned.value = true;
 }
 
 function formatDate(raw: string) {
@@ -73,7 +74,12 @@ onMounted(loadDrives);
 
     <div v-if="loadingMft" class="loading-state"><NSpinner :size="20" /><span>Lecture du journal NTFS...</span></div>
     <div v-else-if="mftFiles.length === 0" class="empty">
-      <Database :size="28" /><p>Lancez le scan pour voir les suppressions récentes</p>
+      <Database :size="28" />
+      <!-- Sans hasScanned, ce même message "Lancez le scan" restait affiché même
+           après un scan réellement effectué n'ayant rien trouvé (journal USN sans
+           suppression récente, ou désactivé) — laissant croire à l'utilisateur
+           qu'il n'a encore rien lancé alors qu'un scan complet vient d'avoir lieu. -->
+      <p>{{ hasScanned ? 'Aucune suppression récente trouvée dans le journal NTFS.' : 'Lancez le scan pour voir les suppressions récentes' }}</p>
     </div>
     <div v-else class="files-table files-table-mft">
       <div class="file-row-mft header-row">
