@@ -9,12 +9,21 @@ use sha2::{Sha256, Digest};
 
 /// Domaines autorisés pour les téléchargements (llama-server + modèles GGUF).
 /// Toute URL hors de cette liste est rejetée avant même l'ouverture de connexion.
+/// Vérifié en direct (HttpWebRequest, AllowAutoRedirect=false) : une release
+/// GitHub redirige aujourd'hui vers `release-assets.githubusercontent.com`
+/// (pas `objects.githubusercontent.com` comme l'ancienne liste le supposait),
+/// et un lien "resolve" HuggingFace redirige vers `us.aws.cdn.hf.co` — un
+/// domaine RÉELLEMENT distinct de huggingface.co (pas un sous-domaine), donc
+/// jamais couvert par les anciennes entrées `cdn-lfs*.huggingface.co`
+/// (qui étaient de toute façon déjà redondantes avec `huggingface.co`, un
+/// sous-domaine étant automatiquement couvert par le suffixe). Entrées
+/// génériques par suffixe de domaine possédé, robustes aux sous-domaines CDN
+/// régionaux/edge qui varient dans le temps.
 const ALLOWED_DOWNLOAD_HOSTS: &[&str] = &[
     "github.com",
-    "objects.githubusercontent.com",
+    "githubusercontent.com",
     "huggingface.co",
-    "cdn-lfs.huggingface.co",
-    "cdn-lfs-us-1.huggingface.co",
+    "hf.co",
 ];
 
 /// Valide qu'une URL pointe vers un hôte autorisé (HTTPS uniquement).
@@ -707,5 +716,21 @@ mod tests {
             "http://github.com/x/y/file.zip",
         );
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn real_github_release_asset_redirect_target_accepted() {
+        // Vérifié en direct : cible réelle actuelle des releases GitHub (pas
+        // objects.githubusercontent.com comme supposé avant ce fix).
+        assert!(validate_download_url(
+            "https://release-assets.githubusercontent.com/github-production-release-asset/612354784/x?sig=y"
+        ).is_ok());
+    }
+
+    #[test]
+    fn real_huggingface_resolve_redirect_target_accepted() {
+        // Vérifié en direct : les liens "resolve" HuggingFace redirigent vers
+        // un domaine hf.co distinct (pas un sous-domaine de huggingface.co).
+        assert!(validate_download_url("https://us.aws.cdn.hf.co/repo/model.gguf?sig=x").is_ok());
     }
 }
