@@ -162,8 +162,13 @@ async function runRepair(key: string) {
 function healthColor(s: string) {
   if (!s) return 'neutral';
   const low = s.toLowerCase();
-  if (low.includes('healthy') || low.includes('no violations') || low.includes('repaired')) return 'success';
+  // Le check "danger" doit être évalué AVANT "success" : la valeur réelle
+  // 'Corrupt (not repaired)' (repair.rs::check_system_health_blocking, SFC
+  // trouvé corrompu et PAS réparé) contient "repaired" comme sous-chaîne —
+  // testée dans l'ordre inverse, ce cas grave était classé "success" (vert)
+  // au lieu de "danger" (rouge). Même piège que DiagTabActivation.vue.
   if (low.includes('repairable') || low.includes('corrupt')) return 'danger';
+  if (low.includes('healthy') || low.includes('no violations') || low.includes('repaired')) return 'success';
   return 'neutral';
 }
 </script>
