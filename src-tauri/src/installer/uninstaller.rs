@@ -478,9 +478,17 @@ foreach ($item in $items) {{
         }} elseif ($prefix -eq 'RK') {{
             Remove-Item $payload -Recurse -Force -ErrorAction Stop; $ok++
         }} elseif ($prefix -eq 'EX') {{
+            # -EA SilentlyContinue sur les deux (l'entree n'existe que dans UNE
+            # des deux ruches) puis $ok++ inconditionnel comptait toujours cette
+            # entree comme nettoyee, meme si un vrai echec de suppression (droits,
+            # cle verrouillee) laissait la valeur en place dans la ruche ou elle
+            # existait reellement. Verifie maintenant la vraie disparition dans
+            # les deux ruches avant de compter un succes, meme pattern que FS/RK/LN.
             Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $payload -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $payload -ErrorAction SilentlyContinue
-            $ok++
+            $stillHkcu = $null -ne (Get-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $payload -ErrorAction SilentlyContinue)
+            $stillHklm = $null -ne (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $payload -ErrorAction SilentlyContinue)
+            if ($stillHkcu -or $stillHklm) {{ $fail++ }} else {{ $ok++ }}
         }} elseif ($prefix -eq 'LN') {{
             Remove-Item $payload -Force -ErrorAction Stop; $ok++
         }} else {{ $fail++ }}
