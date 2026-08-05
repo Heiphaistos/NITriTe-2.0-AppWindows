@@ -51,17 +51,20 @@ function keyTypeVariant(t: string): "success"|"warning"|"info"|"default" {
 }
 
 async function openMas() {
+  // SÉCURITÉ : n'exécute JAMAIS de script tiers téléchargé depuis internet
+  // (irm ... | iex) avec élévation admin — un serveur/domaine tiers compromis
+  // ou remplacé exécuterait du code arbitraire en administrateur sur la
+  // machine. Un correctif sûr existe déjà côté backend (open_mas_window,
+  // lib_extended_cmds.rs — ouvre uniquement la page d'activation Windows
+  // officielle) mais n'était jamais appelé depuis cette page : le bouton
+  // reconstruisait et exécutait lui-même le pattern irm|iex dangereux.
   activating.value = true;
-  statusMsg.value = "Lancement de MAS en administrateur...";
+  statusMsg.value = "Ouverture des paramètres d'activation Windows...";
   try {
-    const cmd1 = `powershell -WindowStyle Hidden -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -WindowStyle Normal -Command irm https://get.activated.win | iex'"`;
-    await invoke("execute_script", { content: cmd1, scriptType: "cmd" }).catch(async () => {
-      const cmd2 = `powershell -WindowStyle Hidden -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -WindowStyle Normal -Command [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://get.activated.win | iex'"`;
-      await invoke("execute_script", { content: cmd2, scriptType: "cmd" });
-    });
-    statusMsg.value = "Fenêtre PowerShell MAS ouverte. Suivez les instructions à l'écran.";
-  } catch {
-    statusMsg.value = "Erreur: lancez manuellement: irm https://get.activated.win | iex";
+    await invoke("open_mas_window");
+    statusMsg.value = "Paramètres d'activation Windows ouverts.";
+  } catch (e: unknown) {
+    statusMsg.value = "Erreur : " + (e instanceof Error ? e.message : String(e));
   }
   activating.value = false;
 }
@@ -130,9 +133,11 @@ function actStatus(s: string): "success" | "danger" | "warning" | "default" {
         <AlertTriangle :size="15" style="color:var(--warning);flex-shrink:0;margin-top:2px" />
         <div style="font-size:12px;line-height:1.6;color:var(--text-secondary)">
           <strong style="color:var(--text)">MAS</strong> (massgravel) est un projet open-source qui utilise des méthodes
-          légitimes reconnues par Microsoft (HWID, KMS38) pour activer Windows et Office.
-          L'activation s'effectue dans une <strong>fenêtre PowerShell élevée</strong> séparée — vous verrez exactement
-          ce qui se passe. Aucune donnée n'est envoyée à des tiers.
+          reconnues par Microsoft (HWID, KMS38) pour activer Windows et Office.
+          Par sécurité, NiTriTe n'exécute jamais automatiquement de script téléchargé depuis
+          internet avec des droits administrateur — le bouton ci-dessous ouvre les paramètres
+          d'activation Windows officiels ; pour utiliser MAS lui-même, lancez-le manuellement
+          depuis sa source officielle ci-dessous.
           <br><br>
           Source officielle :
           <code style="font-size:10px">github.com/massgravel/Microsoft-Activation-Scripts</code>
@@ -143,8 +148,7 @@ function actStatus(s: string): "success" | "danger" | "warning" | "default" {
     <!-- Méthodes -->
     <div class="card-block" style="margin-bottom:12px">
       <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
-        Cliquer sur un bouton ouvre une fenêtre PowerShell en mode administrateur avec le menu MAS interactif.
-        Sélectionnez la méthode souhaitée dans le menu affiché.
+        Méthodes proposées par MAS (à choisir vous-même en le lançant depuis le lien GitHub ci-dessous) :
       </p>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -197,12 +201,12 @@ function actStatus(s: string): "success" | "danger" | "warning" | "default" {
         </div>
       </div>
 
-      <!-- Bouton unique MAS -->
+      <!-- Bouton unique : paramètres d'activation Windows officiels -->
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <NButton variant="primary" :disabled="activating" @click="openMas">
           <NSpinner v-if="activating" :size="13" />
           <Key v-else :size="14" />
-          {{ activating ? 'Ouverture...' : 'Ouvrir le menu MAS (admin)' }}
+          {{ activating ? 'Ouverture...' : 'Paramètres d\'activation Windows' }}
         </NButton>
         <NButton variant="ghost" size="sm" @click="invoke('open_url', { url: 'https://github.com/massgravel/Microsoft-Activation-Scripts' }).catch(() => {})">
           <ExternalLink :size="12" /> GitHub MAS

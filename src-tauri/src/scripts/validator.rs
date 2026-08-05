@@ -145,4 +145,23 @@ mod tests {
         let r = validate_script("try { Get-Service } catch { }".into(), "powershell".into());
         assert!(r.info.iter().any(|i| i.contains("Gestion d'erreur")));
     }
+
+    #[test]
+    fn irm_iex_elevated_pattern_is_danger() {
+        // Régression : DiagTabActivation.vue::openMas() construisait cette
+        // exacte commande (irm https://get.activated.win | iex, élevée via
+        // Start-Process -Verb RunAs) et l'envoyait à execute_script — retiré
+        // au profit d'open_mas_window() (n'exécute aucun script tiers).
+        // `| iex` sans parenthèse ne matche PAS le pattern "iex (" existant,
+        // mais est quand même intercepté via "start-process" (Start-Process
+        // -Verb RunAs pour l'élévation) : ce test fige cette double dépendance
+        // et détecterait une régression si le pattern "start-process" était
+        // un jour retiré/assoupli sans que quelqu'un pense à cet appelant.
+        let cmd = r#"powershell -WindowStyle Hidden -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -WindowStyle Normal -Command irm https://get.activated.win | iex'""#;
+        let r = validate_script(cmd.into(), "cmd".into());
+        assert_eq!(r.risk_level, "danger");
+        // Confirme que c'est bien "start-process" qui déclenche le blocage
+        // (le pattern "iex (" avec parenthèse ne matche pas "| iex" en pipeline).
+        assert!(r.warnings.iter().any(|w| w.contains("Lancement de processus externe")));
+    }
 }
