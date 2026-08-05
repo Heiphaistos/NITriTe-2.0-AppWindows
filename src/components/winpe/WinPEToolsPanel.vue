@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, type Component } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
 import NButton from "@/components/ui/NButton.vue";
 import { useNotificationStore } from "@/stores/notifications";
@@ -40,7 +41,7 @@ type CmdCat =
   | "Services" | "Diagnostic" | "Sécurité" | "Démarrage"
   | "Registre" | "Windows Update" | "Activation" | "Performances";
 
-interface QuickCmd { label: string; cmd: string; cat: CmdCat; }
+interface QuickCmd { label: string; cmd: string; cat: CmdCat; dangerous?: boolean; }
 
 const QUICK_CMDS: QuickCmd[] = [
 
@@ -127,7 +128,7 @@ const QUICK_CMDS: QuickCmd[] = [
   { cat: "Nettoyage", label: "Vider cache miniatures",       cmd: "del /f /s /q %LocalAppData%\\Microsoft\\Windows\\Explorer\\thumbcache_*.db" },
   { cat: "Nettoyage", label: "Vider journaux d'événements",  cmd: "for /F \"tokens=*\" %1 in ('wevtutil.exe el') DO wevtutil.exe cl \"%1\"" },
   { cat: "Nettoyage", label: "Vider cache DNS (pipe PS)",    cmd: "powershell Clear-DnsClientCache" },
-  { cat: "Nettoyage", label: "Supprimer points restauration",cmd: "vssadmin delete shadows /all /quiet" },
+  { cat: "Nettoyage", label: "Supprimer points restauration",cmd: "vssadmin delete shadows /all /quiet", dangerous: true },
   { cat: "Nettoyage", label: "Vider spooler imprimante",     cmd: "net stop spooler && del /q %systemroot%\\system32\\spool\\printers\\* && net start spooler" },
   { cat: "Nettoyage", label: "Compact C: (NTFS)",            cmd: "compact /u /s:C:\\" },
   { cat: "Nettoyage", label: "Supprimer hiberfil.sys",       cmd: "powercfg /h off" },
@@ -367,12 +368,24 @@ async function launchLocalTool(tool: RecoveryTool) {
   }
 }
 
-async function runQuickCmd(cmd: string) {
+async function runQuickCmd(cmd: QuickCmd) {
+  // "Supprimer points restauration" (vssadmin delete shadows /all /quiet) est le
+  // seul item irréversible/destructif de ce catalogue (efface tous les points de
+  // restauration ET les shadow copies, sans possibilité de retour) — même seuil
+  // de gravité que les formatages/wipes déjà protégés ailleurs, d'où le flag
+  // `dangerous` + confirmation dédiée au lieu du Run silencieux des autres commandes.
+  if (cmd.dangerous) {
+    const ok = await confirm(
+      `Supprimer TOUS les points de restauration et copies shadow ?\n\nAction irréversible : plus aucun retour arrière possible via la Restauration système ou les "versions précédentes" de fichiers.\n\nCommande : ${cmd.cmd}`,
+      { title: "Nitrite", kind: "warning" }
+    );
+    if (!ok) return;
+  }
   try {
-    await invoke("winpe_run_command", { command: cmd });
-    notify.info("Commande exécutée", cmd);
+    await invoke("winpe_run_command", { command: cmd.cmd });
+    notify.info("Commande exécutée", cmd.cmd);
   } catch {
-    notify.info("Copier dans le terminal WinPE", cmd);
+    notify.info("Copier dans le terminal WinPE", cmd.cmd);
   }
 }
 </script>
@@ -433,13 +446,13 @@ async function runQuickCmd(cmd: string) {
 
       <!-- Grille -->
       <div class="quick-grid">
-        <div v-for="cmd in filteredCmds" :key="cmd.label + cmd.cat" class="quick-card">
+        <div v-for="cmd in filteredCmds" :key="cmd.label + cmd.cat" class="quick-card" :class="{ 'quick-card-danger': cmd.dangerous }">
           <div class="quick-top">
             <span class="quick-label">{{ cmd.label }}</span>
             <span v-if="activecat === 'Tous'" class="quick-cat-badge">{{ cmd.cat }}</span>
           </div>
           <code class="quick-code" :title="cmd.cmd">{{ cmd.cmd }}</code>
-          <NButton size="sm" variant="ghost" @click="runQuickCmd(cmd.cmd)">
+          <NButton size="sm" :variant="cmd.dangerous ? 'danger' : 'ghost'" @click="runQuickCmd(cmd)">
             <Play :size="11" /> Run
           </NButton>
         </div>
@@ -525,6 +538,8 @@ async function runQuickCmd(cmd: string) {
   transition: border-color .15s;
 }
 .quick-card:hover { border-color: var(--border-hover); }
+.quick-card-danger { border-color: var(--danger); }
+.quick-card-danger:hover { border-color: var(--danger); }
 .quick-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 .quick-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
 .quick-cat-badge {
