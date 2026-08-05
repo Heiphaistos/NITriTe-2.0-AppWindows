@@ -8,15 +8,27 @@ use crate::error::NiTriTeError;
 use crate::installer::winget::InstallResult;
 use crate::maintenance::commands::decode_output;
 
-/// Chemin connu de scoop.exe (shim sous le profil de l'utilisateur courant).
-/// Meme raison que pour Chocolatey : un bootstrap effectue pendant la session
-/// Nitrite en cours ne rend pas "scoop" trouvable via le PATH deja capture au
-/// lancement du process, tant que Nitrite n'est pas relance.
+/// Chemin connu de scoop.exe/scoop.cmd (shim sous le profil de l'utilisateur
+/// courant). Meme raison que pour Chocolatey : un bootstrap effectue pendant
+/// la session Nitrite en cours ne rend pas "scoop" trouvable via le PATH deja
+/// capture au lancement du process, tant que Nitrite n'est pas relance.
+///
+/// Les installations Scoop récentes ne posent PAS de "scoop.exe" dans shims/
+/// — seulement "scoop" (sans extension) et "scoop.cmd" (confirmé en direct
+/// sur cette machine). `Command::new("scoop")` (repli precedent) echoue
+/// silencieusement (NotFound) car Rust ne fait pas de resolution PATHEXT
+/// comme un vrai shell, contrairement a "scoop.cmd" avec son chemin complet
+/// qui fonctionne (Rust gere nativement l'invocation .cmd/.bat sur Windows).
 pub fn scoop_exe() -> String {
     if let Some(home) = dirs::home_dir() {
-        let known = home.join("scoop").join("shims").join("scoop.exe");
-        if known.exists() {
-            return known.to_string_lossy().to_string();
+        let shims = home.join("scoop").join("shims");
+        let known_exe = shims.join("scoop.exe");
+        if known_exe.exists() {
+            return known_exe.to_string_lossy().to_string();
+        }
+        let known_cmd = shims.join("scoop.cmd");
+        if known_cmd.exists() {
+            return known_cmd.to_string_lossy().to_string();
         }
     }
     "scoop".to_string()
@@ -129,4 +141,23 @@ pub fn install_via_scoop(package_id: &str, window: &tauri::Window) -> Result<Ins
         app_id: package_id.to_string(),
         message: if status.success() { "Installation reussie (Scoop)".into() } else { format!("Code: {}", status.code().unwrap_or(-1)) },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Live, non-CI (ignorée par défaut) : confirme sur une vraie machine
+    // Windows avec Scoop installé que scoop_exe() résout un chemin réellement
+    // exécutable. Cette machine n'a qu'un "scoop.cmd" (pas de "scoop.exe"),
+    // ce qui faisait échouer silencieusement Command::new("scoop") (repli
+    // précédent, pas de résolution PATHEXT côté Rust) — check_scoop()
+    // retournait toujours false même avec Scoop réellement installé.
+    #[test]
+    #[ignore]
+    fn scoop_exe_resolves_to_working_executable() {
+        let exe = scoop_exe();
+        assert_ne!(exe, "scoop", "scoop_exe() ne devrait pas retourner le repli générique quand un shim réel existe : {}", exe);
+        assert!(check_scoop(), "check_scoop() devrait réussir avec le chemin résolu : {}", exe);
+    }
 }
