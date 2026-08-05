@@ -192,7 +192,10 @@ onMounted(load);
         <template #header>
           <div class="section-header"><Server :size="15" /><span>Entrées de démarrage ({{ config.entries.length }})</span></div>
         </template>
-        <div class="entries-list">
+        <div v-if="config.entries.length === 0" class="empty-state">
+          ⚠ Aucune entrée de démarrage détectée — la lecture de la configuration BCD a peut-être échoué. Réessayez ou consultez les journaux.
+        </div>
+        <div v-else class="entries-list">
           <div
             v-for="e in config.entries" :key="e.id"
             class="entry-card"
