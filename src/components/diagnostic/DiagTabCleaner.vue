@@ -200,7 +200,12 @@ function toggleCategory(cat: string) {
   selectedTargets.value = newSet
 }
 
-async function loadTargets() { loading.value = true; try { targets.value = await invokeRaw<CleanTarget[]>('get_clean_targets') } finally { loading.value = false } }
+async function loadTargets() {
+  loading.value = true
+  try { targets.value = await invokeRaw<CleanTarget[]>('get_clean_targets') }
+  catch (e: unknown) { if (isTauriContext()) notify.error("Analyse système", (e instanceof Error ? e.message : String(e)).slice(0, 120)); }
+  finally { loading.value = false }
+}
 
 async function cleanOne(name: string) {
   cleaning.value = name
@@ -210,6 +215,12 @@ async function cleanOne(name: string) {
     // Mise à jour en place — évite le rechargement complet de la liste
     const idx = targets.value.findIndex(t => t.name === name)
     if (idx !== -1) targets.value[idx] = { ...targets.value[idx], size_mb: 0, file_count: 0 }
+  } catch (e: unknown) {
+    // Re-throw : cleanSelected() compte les échecs via son propre catch — ne
+    // pas avaler l'erreur ici casserait son décompte failCount. La notif
+    // couvre le clic direct (bouton "Nettoyer" seul), hors du batch.
+    if (isTauriContext()) notify.error(`Erreur nettoyage ${name}`, (e instanceof Error ? e.message : String(e)).slice(0, 120));
+    throw e;
   } finally { cleaning.value = null }
 }
 
@@ -243,6 +254,7 @@ async function cleanSelected() {
 async function findLarge() {
   largLoading.value = true; largeFiles.value = []
   try { largeFiles.value = await invoke<LargeFile[]>('get_large_files', { folder: largeFolder.value, minSizeMb: minSizeMb.value }) }
+  catch (e: unknown) { if (isTauriContext()) notify.error("Recherche grands fichiers", (e instanceof Error ? e.message : String(e)).slice(0, 120)); }
   finally { largLoading.value = false }
 }
 
