@@ -99,13 +99,23 @@ try {
     Write-Output "[INSTALLATION] Code resultat: $($Inst.ResultCode)"
     if ($Inst.RebootRequired) { Write-Output "[ATTENTION] Redemarrage requis apres installation" }
 
+    $failCount = 0
     for ($i = 0; $i -lt $Count; $i++) {
         $upd = $Result.Updates.Item($i)
         $code = $Inst.GetUpdateResult($i).ResultCode
         $status = switch ($code) { 2 { "OK" } 3 { "ERREUR" } 4 { "EN COURS" } 5 { "ABANDONNE" } default { "CODE $code" } }
+        if ($code -ne 2) { $failCount++ }
         Write-Output "[$status] $($upd.Title)"
     }
     Write-Output "[TERMINE] Installation terminee"
+    # Le code de sortie du script ne refletait avant que "a-t-il leve une
+    # exception ?", pas "les mises a jour ont-elles reellement reussi ?" —
+    # une installation ou CHAQUE mise a jour echoue (ResultCode 3/5) se
+    # terminait quand meme normalement, exit 0, faux succes. Le frontend
+    # (UpdatesPage.vue) fait confiance au booleen : succes => toast "Installation
+    # terminee" ET la liste des MAJ en attente est videe, alors que rien n'a
+    # ete installe.
+    if ($failCount -gt 0) { exit 1 }
 } catch {
     Write-Output "[ERREUR] $($_.Exception.Message)"
     exit 1
