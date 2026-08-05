@@ -1,5 +1,6 @@
 use serde::Serialize;
 use tauri::Emitter;
+use crate::maintenance::commands::decode_output;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -69,7 +70,11 @@ $apps | ConvertTo-Json -Compress -Depth 2
         Err(std::io::Error::new(std::io::ErrorKind::Other, "not windows"));
 
     let output = match result { Ok(o) => o, Err(_) => return vec![] };
-    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    // decode_output : DisplayName/Publisher viennent du registre et sont
+    // frequemment accentues (editeurs FR, composants Microsoft localises —
+    // ex. « Extensions de l'environnement de preinstallation Windows »),
+    // sortent en OEM cote PowerShell → mojibake avec from_utf8_lossy.
+    let text = decode_output(&output.stdout);
     let text = text.trim();
     if text.is_empty() || text == "null" { return vec![]; }
     let json_text = if text.starts_with('{') { format!("[{}]", text) } else { text.to_string() };
@@ -372,7 +377,9 @@ $found | ConvertTo-Json -Compress
             .output();
         match output {
             Ok(o) => {
-                let text = String::from_utf8_lossy(&o.stdout).to_string();
+                // decode_output : chemins de raccourcis/dossiers Menu Demarrer
+                // peuvent contenir des noms accentues.
+                let text = decode_output(&o.stdout);
                 let text = text.trim();
                 if text.is_empty() || text == "null" { return vec![]; }
                 let json = if text.starts_with('"') { format!("[{}]", text) } else { text.to_string() };
@@ -661,7 +668,7 @@ fn run_ps(script: &str) -> Option<String> {
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
             .creation_flags(0x08000000)
             .output().ok()?;
-        Some(String::from_utf8_lossy(&o.stdout).to_string())
+        Some(decode_output(&o.stdout))
     }
     #[cfg(not(target_os = "windows"))]
     None
@@ -670,6 +677,19 @@ fn run_ps(script: &str) -> Option<String> {
 #[cfg(test)]
 mod uninstaller_tests {
     use super::*;
+
+    // Live, non-CI verification (ignorée par défaut) : confirme sur une vraie
+    // machine Windows que list_installed_apps() ne produit plus de mojibake
+    // sur un DisplayName accentué réel du registre local.
+    #[test]
+    #[ignore]
+    fn list_installed_apps_no_mojibake_on_real_registry() {
+        let apps = list_installed_apps();
+        assert!(!apps.is_empty(), "aucune app trouvée — le registre local est-il vide ?");
+        let has_replacement_char = apps.iter().any(|a| a.name.contains('\u{FFFD}') || a.publisher.contains('\u{FFFD}'));
+        assert!(!has_replacement_char, "mojibake détecté dans un DisplayName/Publisher réel : {:?}",
+            apps.iter().find(|a| a.name.contains('\u{FFFD}') || a.publisher.contains('\u{FFFD}')));
+    }
 
     #[test]
     fn safe_fs_residual_allowed() {
