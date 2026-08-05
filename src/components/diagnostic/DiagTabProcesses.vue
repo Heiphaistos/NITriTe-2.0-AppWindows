@@ -81,6 +81,14 @@ async function killProc(pid: number, name: string) {
 }
 
 async function ctrlService(name: string, action: string) {
+  // Contrairement à killProcess/toggleStartup/deleteTask dans ce même fichier,
+  // cette action n'avait aucune confirmation — un seul clic pouvait stopper
+  // n'importe quel service Windows (y compris des services critiques dont
+  // l'arrêt bloque tout le système, ex: RpcSs/DcomLaunch).
+  if (action !== "start") {
+    const verb = action === "stop" ? "Arrêter" : "Redémarrer";
+    if (!(await confirm(`${verb} le service "${name}" ?`, { title: "Nitrite", kind: "warning" }))) return;
+  }
   busySvc.value = name + action;
   try {
     const r = await invoke<string>("control_service", { name, action });

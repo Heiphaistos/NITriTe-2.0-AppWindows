@@ -91,11 +91,56 @@ mod diagnostic_extra_a_tests {
         // naturellement plutôt que refuser sur un nom vide.
         assert!(!is_critical_process(99999, ""));
     }
+
+    // ── is_critical_service_action ────────────────────────────────────────────
+
+    #[test]
+    fn stopping_rpcss_is_blocked() {
+        assert!(is_critical_service_action("RpcSs", "stop"));
+        assert!(is_critical_service_action("rpcss", "stop"));
+    }
+
+    #[test]
+    fn restarting_dcomlaunch_is_blocked() {
+        assert!(is_critical_service_action("DcomLaunch", "restart"));
+    }
+
+    #[test]
+    fn starting_critical_service_is_never_blocked() {
+        assert!(!is_critical_service_action("RpcSs", "start"));
+        assert!(!is_critical_service_action("DcomLaunch", "start"));
+    }
+
+    #[test]
+    fn ordinary_service_is_not_blocked() {
+        assert!(!is_critical_service_action("WinDefend", "stop"));
+        assert!(!is_critical_service_action("Spooler", "stop"));
+        assert!(!is_critical_service_action("wuauserv", "restart"));
+    }
+}
+
+/// Services dont l'arrêt/redémarrage rend Windows non-fonctionnel (nécessite
+/// généralement un reboot) — RpcSs (RPC Endpoint Mapper) et DcomLaunch (DCOM
+/// Server Process Launcher) sont la plomberie de base dont dépend presque tout
+/// le reste du système (documenté par Microsoft). Liste volontairement étroite
+/// (contrairement au `$protected` plus large de temps_wifi_turbo.rs) : on ne
+/// bloque QUE ce qui bloque le système à coup sûr, pas les services qu'un
+/// outil de debloat légitime désactive intentionnellement (WinDefend, etc.).
+/// `start` n'est jamais bloqué (toujours sans risque).
+fn is_critical_service_action(name: &str, action: &str) -> bool {
+    if action == "start" { return false; }
+    matches!(name.trim().to_lowercase().as_str(), "rpcss" | "dcomlaunch")
 }
 
 /// Contrôle un service Windows (start/stop/restart)
 #[tauri::command]
 async fn control_service(name: String, action: String) -> Result<String, String> {
+    if is_critical_service_action(&name, &action) {
+        return Err(format!(
+            "Service système critique ({}) — {} refusé (bloquerait le système, nécessiterait un redémarrage).",
+            name, if action == "stop" { "arrêt" } else { "redémarrage" }
+        ));
+    }
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
