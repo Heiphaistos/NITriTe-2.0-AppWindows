@@ -314,12 +314,32 @@ pub async fn clear_quarantine(entry_name: Option<String>) -> bool {
         .unwrap_or_default()
 }
 
+/// Sanitize un nom d'entrée de quarantaine. Whitelist stricte (alphanum,
+/// espace, tiret, underscore, point) puis rejet explicite des noms composés
+/// UNIQUEMENT de points ("." ou "..") — un tel nom est un segment de
+/// navigation de chemin, pas un nom d'entrée réel. Confirmé en direct :
+/// avec entry_name="..", `"...\quarantine\.."` se résout au parent de
+/// "quarantine" et `Remove-Item -Recurse -Force` efface tout
+/// `%LOCALAPPDATA%\NiTriTe` (config compris), pas seulement la quarantaine.
+/// Les vrais noms d'entrée (quarantine_target_blocking) ne sont jamais
+/// composés uniquement de points.
+fn sanitize_quarantine_entry_name(name: &str) -> Option<String> {
+    let safe: String = name.chars().map(|c| {
+        if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' || c == '.' { c } else { '_' }
+    }).collect();
+    if safe.is_empty() || safe.chars().all(|c| c == '.') {
+        None
+    } else {
+        Some(safe)
+    }
+}
+
 fn clear_quarantine_blocking(entry_name: Option<String>) -> bool {
     let ps = if let Some(name) = entry_name {
-        // Whitelist stricte : alphanum, espace, tiret, underscore, point uniquement
-        let safe: String = name.chars().map(|c| {
-            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' || c == '.' { c } else { '_' }
-        }).collect();
+        let safe = match sanitize_quarantine_entry_name(&name) {
+            Some(s) => s,
+            None => return false,
+        };
         format!("$p=\"$env:LOCALAPPDATA\\NiTriTe\\quarantine\\{safe}\";if(Test-Path $p){{Remove-Item $p -Recurse -Force -EA SilentlyContinue}};$true")
     } else {
         "$p=\"$env:LOCALAPPDATA\\NiTriTe\\quarantine\";if(Test-Path $p){Remove-Item $p -Recurse -Force -EA SilentlyContinue};$true".to_string()
@@ -415,5 +435,37 @@ mod tests {
         let safe2 = dangerous.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_");
         assert!(!safe2.contains('/'));
         assert!(!safe2.contains('\\'));
+    }
+
+    // ── sanitize_quarantine_entry_name ────────────────────────────────────────
+
+    #[test]
+    fn quarantine_entry_dotdot_rejected() {
+        // Confirmé en direct : "..\quarantine\.." remonte au parent et
+        // Remove-Item -Recurse -Force efface tout %LOCALAPPDATA%\NiTriTe.
+        assert_eq!(sanitize_quarantine_entry_name(".."), None);
+        assert_eq!(sanitize_quarantine_entry_name("."), None);
+        assert_eq!(sanitize_quarantine_entry_name("...."), None);
+    }
+
+    #[test]
+    fn quarantine_entry_empty_rejected() {
+        assert_eq!(sanitize_quarantine_entry_name(""), None);
+    }
+
+    #[test]
+    fn quarantine_entry_real_names_allowed() {
+        assert_eq!(sanitize_quarantine_entry_name("Windows_Temp"), Some("Windows_Temp".to_string()));
+        assert_eq!(sanitize_quarantine_entry_name("Chrome Cache"), Some("Chrome Cache".to_string()));
+    }
+
+    #[test]
+    fn quarantine_entry_path_separators_stripped_not_dots() {
+        // "..\.." devient ".._.." (backslash strippé) — pas rejeté par le
+        // check all-dots car il contient aussi des underscores, mais ne
+        // traverse plus (aucun séparateur de chemin restant).
+        let r = sanitize_quarantine_entry_name(r"..\..").unwrap();
+        assert!(!r.contains('\\'));
+        assert!(!r.contains('/'));
     }
 }
