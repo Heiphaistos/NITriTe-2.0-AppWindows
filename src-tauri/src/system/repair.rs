@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+use crate::maintenance::commands::decode_output;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SystemHealthStatus {
@@ -88,7 +89,10 @@ $out | ConvertTo-Json -Depth 3 -Compress
             .output();
 
         if let Ok(o) = output {
-            let text = String::from_utf8_lossy(&o.stdout);
+            // decode_output : les messages d'événements Windows (DiskErrors)
+            // sont du texte système localisé FR — confirmé en direct sur cette
+            // machine (« Le service ... est entré dans l'état »).
+            let text = decode_output(&o.stdout);
             let v: serde_json::Value = match serde_json::from_str(text.trim()) {
                 Ok(v) => v,
                 Err(_) => return SystemHealthStatus::default(),
@@ -391,8 +395,11 @@ fn run_repair_command_blocking(repair_type: String) -> RepairResult {
 
         let duration = start.elapsed().as_secs();
         if let Ok(o) = output {
-            let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+            // decode_output : sortie SFC/DISM/bcdedit/CHKDSK — confirmé en
+            // direct sur cette machine (« Gestionnaire de démarrage du
+            // microprogramme » corrompu par from_utf8_lossy via bcdedit).
+            let stdout = decode_output(&o.stdout);
+            let stderr = decode_output(&o.stderr);
             let combined = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
             return RepairResult {
                 command: label.to_string(),
@@ -447,5 +454,28 @@ mod tests {
         let result = run_repair_command_blocking("injected_command".to_string());
         assert!(!result.success);
         assert!(result.output.contains("inconnu"));
+    }
+
+    // Live, non-CI (ignorée par défaut) : confirme sur une vraie machine
+    // Windows que run_repair_command_blocking("bcdedit_check") (lecture seule,
+    // rapide) ne produit plus de mojibake sur la sortie française de bcdedit
+    // (« Gestionnaire de démarrage du microprogramme » — corruption confirmée
+    // avant fix via repro Rust direct).
+    #[test]
+    #[ignore]
+    fn run_repair_bcdedit_check_no_mojibake() {
+        let result = run_repair_command_blocking("bcdedit_check".to_string());
+        assert!(!result.output.contains('\u{FFFD}'), "mojibake détecté : {:?}", &result.output[..result.output.len().min(300)]);
+    }
+
+    // Live, non-CI (ignorée par défaut) : confirme que check_system_health()
+    // ne produit plus de mojibake sur les messages d'événements Windows réels
+    // (DiskErrors) — corruption confirmée avant fix via repro Rust direct.
+    #[test]
+    #[ignore]
+    fn check_system_health_no_mojibake() {
+        let status = check_system_health_blocking();
+        let bad = status.disk_errors.iter().find(|e| e.contains('\u{FFFD}'));
+        assert!(bad.is_none(), "mojibake détecté dans disk_errors : {:?}", bad);
     }
 }
