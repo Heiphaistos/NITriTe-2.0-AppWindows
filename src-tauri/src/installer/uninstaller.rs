@@ -496,9 +496,56 @@ foreach ($item in $items) {{
 
 // ── Extraction puis suppression des résidus ──────────────────────────────────
 
+/// Miroir Rust (testable) de la fonction PowerShell `Is-SafeToDelete` embarquée
+/// dans `delete_residuals` — réutilisé ici pour filtrer AVANT la copie dans
+/// `extract_residuals`, qui ne faisait auparavant aucune vérification avant de
+/// copier (seule la suppression finale, déléguée à `delete_residuals`, était
+/// protégée) : un chemin système protégé finissait copié dans le dossier cible
+/// choisi par l'utilisateur avant d'être correctement ignoré à la suppression.
+fn is_safe_residual(item: &str) -> bool {
+    const SYS_FS: [&str; 11] = [
+        r"c:\windows\", r"\system32\", r"\syswow64\",
+        r"c:\program files\common files\", r"c:\program files (x86)\common files\",
+        r"c:\programdata\microsoft\windows\",
+        r"\appdata\roaming\microsoft\windows\", r"\appdata\local\microsoft\windows\",
+        r"c:\users\default\", r"c:\users\public\",
+        r"c:\programdata\microsoft\windows defender\",
+    ];
+    const SYS_REG: [&str; 9] = [
+        r"hklm:\software\microsoft\", r"hklm:\software\classes\", r"hklm:\software\policies\",
+        r"hklm:\system\", r"hklm:\sam\", r"hklm:\security\",
+        r"hkcu:\software\microsoft\windows\currentversion\explorer\",
+        r"hkcu:\software\microsoft\windows nt\", r"hkcu:\software\classes\",
+    ];
+    let Some((prefix, rest)) = item.split_once(':') else { return false };
+    match prefix {
+        "FS" | "LN" => {
+            let raw = rest.strip_prefix("Menu:").unwrap_or(rest);
+            if raw.len() < 12 { return false; }
+            let raw_lower = raw.to_lowercase();
+            !SYS_FS.iter().any(|p| raw_lower.contains(p))
+        }
+        "RK" => {
+            if rest.len() < 20 { return false; }
+            let rest_lower = rest.to_lowercase();
+            !SYS_REG.iter().any(|p| rest_lower.starts_with(p))
+        }
+        "EX" => true,
+        _ => false,
+    }
+}
+
 pub fn extract_residuals(paths: Vec<String>, target: String) -> ResidualCleanResult {
     if paths.is_empty() {
         return ResidualCleanResult { success: true, deleted_count: 0, failed_count: 0, message: "Rien à extraire.".into() };
+    }
+    let skipped = paths.iter().filter(|p| !is_safe_residual(p)).count();
+    let paths: Vec<String> = paths.into_iter().filter(|p| is_safe_residual(p)).collect();
+    if paths.is_empty() {
+        return ResidualCleanResult {
+            success: false, deleted_count: 0, failed_count: skipped,
+            message: "Aucun résidu sûr à extraire (chemins protégés ignorés).".into(),
+        };
     }
 
     let target_path = std::path::PathBuf::from(&target);
@@ -582,10 +629,12 @@ foreach ($item in $fileItems) {{
     let del = delete_residuals(paths);
 
     ResidualCleanResult {
-        success: del.success,
+        success: del.success && skipped == 0,
         deleted_count: del.deleted_count,
-        failed_count: del.failed_count,
-        message: if copy_fail > 0 {
+        failed_count: del.failed_count + skipped,
+        message: if skipped > 0 {
+            format!("{} copié(s) dans «{}», {} supprimé(s), {} ignoré(s) (protégé)", copied, target, del.deleted_count, skipped)
+        } else if copy_fail > 0 {
             format!("{} copié(s) ({} échec), {} supprimé(s) dans «{}»", copied, copy_fail, del.deleted_count, target)
         } else {
             format!("{} copié(s) dans «{}», {} supprimé(s)", copied, target, del.deleted_count)
@@ -604,4 +653,75 @@ fn run_ps(script: &str) -> Option<String> {
     }
     #[cfg(not(target_os = "windows"))]
     None
+}
+
+#[cfg(test)]
+mod uninstaller_tests {
+    use super::*;
+
+    #[test]
+    fn safe_fs_residual_allowed() {
+        assert!(is_safe_residual(r"FS:C:\Users\Momo\AppData\Roaming\SomeApp"));
+    }
+
+    #[test]
+    fn windows_system32_fs_residual_blocked() {
+        assert!(!is_safe_residual(r"FS:C:\Windows\System32\drivers\etc\hosts"));
+    }
+
+    #[test]
+    fn windows_defender_fs_residual_blocked() {
+        assert!(!is_safe_residual(r"FS:C:\ProgramData\Microsoft\Windows Defender\Platform"));
+    }
+
+    #[test]
+    fn menu_prefixed_residual_checked_against_real_path() {
+        // Comportement HÉRITÉ de la blocklist existante de delete_residuals (pas
+        // une décision prise ici) : un raccourci Menu Démarrer vit toujours sous
+        // "...\Microsoft\Windows\Start Menu\..." (ProgramData tous-users OU
+        // AppData\Roaming par-utilisateur), donc TOUJOURS bloqué par les entrées
+        // "\ProgramData\Microsoft\Windows\" / "\AppData\Roaming\Microsoft\Windows\".
+        // Le sous-préfixe Menu: est bien retiré avant vérification (ce test le
+        // prouve), mais le chemin réel qu'il révèle matche quand même le blocage.
+        assert!(!is_safe_residual(r"FS:Menu:C:\ProgramData\Microsoft\Windows\Start Menu\Programs\SomeApp"));
+    }
+
+    #[test]
+    fn short_fs_path_blocked() {
+        // < 12 caractères après le préfixe : trop court pour être un vrai résidu.
+        assert!(!is_safe_residual("FS:C:\\a"));
+    }
+
+    #[test]
+    fn safe_registry_key_allowed() {
+        assert!(is_safe_residual(r"RK:HKCU:\SOFTWARE\SomeVendor\SomeApp\Settings"));
+    }
+
+    #[test]
+    fn hklm_software_microsoft_registry_blocked() {
+        assert!(!is_safe_residual(r"RK:HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"));
+    }
+
+    #[test]
+    fn hklm_system_registry_blocked() {
+        assert!(!is_safe_residual(r"RK:HKLM:\SYSTEM\CurrentControlSet\Services"));
+    }
+
+    #[test]
+    fn run_entry_always_allowed() {
+        assert!(is_safe_residual("EX:SomeAppAutostart"));
+    }
+
+    #[test]
+    fn unknown_prefix_blocked() {
+        assert!(!is_safe_residual("XX:whatever"));
+        assert!(!is_safe_residual("no-colon-at-all"));
+    }
+
+    #[test]
+    fn case_insensitive_like_powershell() {
+        // PowerShell -like est insensible à la casse — le miroir Rust doit l'être aussi.
+        assert!(!is_safe_residual(r"FS:c:\WINDOWS\system32\evil.dll"));
+        assert!(!is_safe_residual(r"RK:hklm:\Software\Microsoft\Foo"));
+    }
 }
