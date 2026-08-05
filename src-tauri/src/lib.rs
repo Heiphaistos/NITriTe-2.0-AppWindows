@@ -38,29 +38,43 @@ include!("lib_diagnostic_extra_b.rs");
 
 // === Profils ===
 
+// Anti-freeze : list_profiles lit chaque fichier profil du dossier (fs::read_dir
+// + fs::read_to_string en boucle), save/delete/export/import font de l'I/O
+// fichier (fs::write/remove_file/read_to_string) — jamais inline sur le
+// thread de commande.
 #[tauri::command]
-fn list_profiles() -> Vec<utils::profiles::Profile> {
-    utils::profiles::list_profiles()
+async fn list_profiles() -> Vec<utils::profiles::Profile> {
+    tokio::task::spawn_blocking(utils::profiles::list_profiles)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-fn save_profile_cmd(profile: utils::profiles::Profile) -> Result<(), String> {
-    utils::profiles::save_profile(&profile).map_err(|e| e.to_string())
+async fn save_profile_cmd(profile: utils::profiles::Profile) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || utils::profiles::save_profile(&profile).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn delete_profile_cmd(name: String) -> Result<(), String> {
-    utils::profiles::delete_profile(&name).map_err(|e| e.to_string())
+async fn delete_profile_cmd(name: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || utils::profiles::delete_profile(&name).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn export_profile_json(name: String) -> Option<String> {
-    utils::profiles::export_profile_json(&name)
+async fn export_profile_json(name: String) -> Option<String> {
+    tokio::task::spawn_blocking(move || utils::profiles::export_profile_json(&name))
+        .await
+        .unwrap_or(None)
 }
 
 #[tauri::command]
-fn import_profile_json(json: String) -> Result<utils::profiles::Profile, String> {
-    utils::profiles::import_profile_from_json(&json)
+async fn import_profile_json(json: String) -> Result<utils::profiles::Profile, String> {
+    tokio::task::spawn_blocking(move || utils::profiles::import_profile_from_json(&json))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // === Gestionnaire de Dépendances ===
@@ -97,7 +111,7 @@ pub fn run() {
     utils::logger::init_logger();
     logging::init_log_dir();
     logging::log_internal("INFO", "SYSTEM", "NiTriTe démarré — init logging", None);
-    tracing::info!("Demarrage NiTriTe 8.113.0");
+    tracing::info!("Demarrage NiTriTe 8.114.0");
 
     let config = AppConfig::load();
     let app_state = AppState::new(config);
