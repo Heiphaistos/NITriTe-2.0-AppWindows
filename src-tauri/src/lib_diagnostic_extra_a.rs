@@ -1,10 +1,40 @@
 
+/// PID/nom de processus dont la terminaison plante immédiatement Windows
+/// (BSOD ou déconnexion de session forcée) — ce n'est pas juste "risqué",
+/// c'est un comportement noyau volontaire (protection anti-sabotage intégrée
+/// depuis Windows XP/Vista : csrss.exe déclenche un arrêt système s'il reçoit
+/// une demande de terminaison). PID 0/4 sont fixes par le noyau (System Idle
+/// Process / System). Liste volontairement étroite (contrairement au
+/// `$protected` plus large de temps_wifi_turbo.rs, pensé pour un auto-kill de
+/// process "inutiles") : ici l'utilisateur cible un PID précis avec
+/// confirmation explicite, on ne bloque que ce qui plante l'OS à coup sûr.
+fn is_critical_process(pid: u32, name: &str) -> bool {
+    if pid == 0 || pid == 4 { return true; }
+    let n = name.trim().to_lowercase();
+    let n = n.strip_suffix(".exe").unwrap_or(&n);
+    matches!(n, "csrss" | "wininit" | "winlogon" | "services" | "lsass" | "smss")
+}
+
 /// Termine un processus par son PID
 #[tauri::command]
 async fn kill_process(pid: u32) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
+            let name = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command",
+                    &format!("(Get-Process -Id {} -ErrorAction SilentlyContinue).ProcessName", pid)])
+                .creation_flags(0x08000000)
+                .output()
+                .ok()
+                .map(|o| crate::maintenance::commands::decode_output(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            if is_critical_process(pid, &name) {
+                return Err(format!(
+                    "Processus système critique ({}) — terminaison refusée (plante immédiatement Windows).",
+                    if name.is_empty() { format!("PID {}", pid) } else { name }
+                ));
+            }
             let out = std::process::Command::new("taskkill")
                 .args(["/PID", &pid.to_string(), "/F"])
                 .creation_flags(0x08000000)
@@ -19,6 +49,48 @@ async fn kill_process(pid: u32) -> Result<String, String> {
         #[cfg(not(target_os = "windows"))]
         Err("Non supporté".to_string())
     }).await.map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod diagnostic_extra_a_tests {
+    use super::*;
+
+    #[test]
+    fn system_idle_process_pid_is_critical() {
+        assert!(is_critical_process(0, ""));
+    }
+
+    #[test]
+    fn system_pid_is_critical() {
+        assert!(is_critical_process(4, "System"));
+    }
+
+    #[test]
+    fn csrss_name_is_critical_regardless_of_pid() {
+        assert!(is_critical_process(1234, "csrss.exe"));
+        assert!(is_critical_process(1234, "csrss"));
+        assert!(is_critical_process(1234, "CSRSS.EXE"));
+    }
+
+    #[test]
+    fn lsass_and_winlogon_are_critical() {
+        assert!(is_critical_process(999, "lsass.exe"));
+        assert!(is_critical_process(999, "winlogon.exe"));
+    }
+
+    #[test]
+    fn ordinary_process_is_not_critical() {
+        assert!(!is_critical_process(1234, "chrome.exe"));
+        assert!(!is_critical_process(1234, "notepad.exe"));
+        assert!(!is_critical_process(1234, "svchost.exe"));
+    }
+
+    #[test]
+    fn unresolved_name_on_ordinary_pid_is_not_critical() {
+        // PID inconnu/déjà terminé, ni 0 ni 4 — laisser taskkill échouer
+        // naturellement plutôt que refuser sur un nom vide.
+        assert!(!is_critical_process(99999, ""));
+    }
 }
 
 /// Contrôle un service Windows (start/stop/restart)
