@@ -377,6 +377,17 @@ async fn disable_startup_program(name: String, location: String) -> Result<maint
         .map_err(|e| NiTriTeError::System(e.to_string()))?
 }
 
+/// `%TEMP%` est un dossier PARTAGÉ par toutes les applications de la machine
+/// (pas propre à NiTriTe) — le nettoyage de sortie n'y supprime QUE ce qui
+/// porte le nom de l'app elle-même. Le mot générique "tauri" matchait aussi
+/// les artefacts temp d'autres applications Tauri installées sur la même
+/// machine, un risque de suppression collatérale de données appartenant à
+/// une application tierce (plusieurs autres apps de ce parc sont elles aussi
+/// construites avec Tauri).
+fn is_own_temp_entry(name: &str) -> bool {
+    name.contains("nitrite")
+}
+
 // === Nettoyage sortie ===
 
 #[tauri::command]
@@ -411,7 +422,7 @@ async fn cleanup_on_exit(app: tauri::AppHandle) -> Result<(), NiTriTeError> {
             if let Ok(entries) = std::fs::read_dir(&temp) {
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().to_lowercase();
-                    if name.contains("nitrite") || name.contains("tauri") {
+                    if is_own_temp_entry(&name) {
                         if entry.path().is_dir() {
                             let _ = std::fs::remove_dir_all(entry.path());
                         } else {
@@ -494,5 +505,28 @@ mod tests {
     fn blocked_command_with_full_path_rejected() {
         assert!(validate_ui_command("C:\\Windows\\format.exe", &[]).is_err());
         assert!(validate_ui_command("C:\\bin\\fdisk.exe", &[]).is_err());
+    }
+
+    // ── is_own_temp_entry ─────────────────────────────────────────────────────
+
+    #[test]
+    fn own_app_temp_entries_matched() {
+        assert!(is_own_temp_entry("nitrite-report-1234.tmp"));
+        assert!(is_own_temp_entry("nitrite_export_20260805"));
+    }
+
+    #[test]
+    fn other_tauri_apps_temp_entries_not_matched() {
+        // Régression : %TEMP% est partagé par toutes les apps de la machine.
+        // "tauri" seul matchait aussi les dossiers temp d'autres apps Tauri
+        // (ForgeChat, ForgeEmu, PlexMetaForge...) installées sur ce parc.
+        assert!(!is_own_temp_entry("forgechat-tauri-updater"));
+        assert!(!is_own_temp_entry("tauri-webview-cache"));
+    }
+
+    #[test]
+    fn unrelated_temp_entries_not_matched() {
+        assert!(!is_own_temp_entry("chrome_cache_1234"));
+        assert!(!is_own_temp_entry("random_folder"));
     }
 }

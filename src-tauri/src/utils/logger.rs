@@ -27,5 +27,5 @@ pub fn init_logger() {
         .with(fmt::layer().with_writer(std::io::stdout))
         .init();
 
-    tracing::info!("NiTriTe 8.140.0 — Logger initialise");
+    tracing::info!("NiTriTe 8.141.0 — Logger initialise");
 }
