@@ -5,6 +5,7 @@ use std::process::Command;
 use std::os::windows::process::CommandExt;
 
 use crate::error::NiTriTeError;
+use crate::maintenance::commands::decode_output;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SafeCommandResult {
@@ -111,17 +112,32 @@ pub fn execute_safe(command: &str) -> Result<SafeCommandResult, NiTriTeError> {
         .output()
         .map_err(|e| NiTriTeError::System(e.to_string()))?;
 
+    // decode_output : systeminfo/driverquery/tasklist (whitelistés ci-dessus)
+    // sont les cas classiques OEM — confirmé en direct sur cette machine
+    // (« Nom d'hôte », « Mode de démarrage », « État » corrompus). Cette
+    // sortie alimente aussi le contexte de l'agent IA, pas seulement l'UI.
     Ok(SafeCommandResult {
         command: command.to_string(),
         success: output.status.success(),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        stdout: decode_output(&output.stdout),
+        stderr: decode_output(&output.stderr),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Live, non-CI (ignorée par défaut) : confirme sur une vraie machine Windows
+    // que execute_safe() ne produit plus de mojibake sur les commandes OEM
+    // classiques (« Nom d'hôte », « Mode de démarrage »... — corruption
+    // confirmée avant fix via repro Rust direct sur systeminfo/driverquery).
+    #[test]
+    #[ignore]
+    fn execute_safe_systeminfo_no_mojibake() {
+        let result = execute_safe("systeminfo").expect("execute_safe failed");
+        assert!(!result.stdout.contains('\u{FFFD}'), "mojibake détecté dans systeminfo : {:?}", &result.stdout[..result.stdout.len().min(300)]);
+    }
 
     // ── Whitelist / Blacklist ──────────────────────────────────────────────────
 
