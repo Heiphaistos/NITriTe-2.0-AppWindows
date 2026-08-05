@@ -245,6 +245,26 @@ pub fn run_dism_check() -> (String, String) {
     }
 }
 
+// Classification pure et testable de la sortie `sfc /verifyonly`. Extraite de
+// run_sfc_verify() pour pouvoir vérifier les 2 langues sans relancer sfc (lent,
+// plusieurs minutes) à chaque test. Sortie FR confirmée en exécution réelle
+// (2026-08-05, sfc /VERIFYFILE) : "...n'a trouvé aucune violation d'intégrité." —
+// le check anglais seul ("no integrity violations") ne matche jamais sur un
+// Windows FR (100% du public cible de l'app), même piège que le check winget
+// upgrade corrigé au cycle 55.
+fn classify_sfc_status(text: &str, exit_success: bool) -> String {
+    let low = text.to_lowercase();
+    if low.contains("no integrity violations") || low.contains("aucune violation d") {
+        "Intègre — Aucune violation détectée".to_string()
+    } else if low.contains("found corrupt") || low.contains("fichiers corrompus") {
+        "Fichiers corrompus détectés".to_string()
+    } else if !exit_success {
+        "Avertissement — Relancer en administrateur".to_string()
+    } else {
+        "Vérification complète".to_string()
+    }
+}
+
 pub fn run_sfc_verify() -> (String, String) {
     let output = Command::new("sfc").args(["/verifyonly"]).creation_flags(0x08000000).output();
     match output {
@@ -258,13 +278,7 @@ pub fn run_sfc_verify() -> (String, String) {
                 let utf16: Vec<u16> = bytes.chunks(2).map(|c| u16::from_le_bytes([c[0], c.get(1).copied().unwrap_or(0)])).collect();
                 String::from_utf16_lossy(&utf16)
             } else { crate::maintenance::commands::decode_output(&o.stdout) };
-            let status = if text.to_lowercase().contains("no integrity violations") {
-                "Intègre — Aucune violation détectée".to_string()
-            } else if text.to_lowercase().contains("found corrupt") {
-                "Fichiers corrompus détectés".to_string()
-            } else if !o.status.success() {
-                "Avertissement — Relancer en administrateur".to_string()
-            } else { "Vérification complète".to_string() };
+            let status = classify_sfc_status(&text, o.status.success());
             let details: String = text.lines()
                 .filter(|l| !l.trim().is_empty())
                 .take(40)
@@ -273,5 +287,39 @@ pub fn run_sfc_verify() -> (String, String) {
             (status, details)
         }
         Err(_) => ("SFC non disponible".to_string(), String::new()),
+    }
+}
+
+#[cfg(test)]
+mod sfc_status_tests {
+    use super::classify_sfc_status;
+
+    #[test]
+    fn real_french_clean_scan_detected() {
+        // Sortie réelle capturée en direct (sfc /VERIFYFILE, 2026-08-05).
+        let text = "Le programme de protection des ressources Windows n'a trouvé aucune violation d'intégrité.";
+        assert_eq!(classify_sfc_status(text, true), "Intègre — Aucune violation détectée");
+    }
+
+    #[test]
+    fn english_clean_scan_still_detected() {
+        let text = "Windows Resource Protection did not find any integrity violations. no integrity violations found";
+        assert_eq!(classify_sfc_status(text, true), "Intègre — Aucune violation détectée");
+    }
+
+    #[test]
+    fn french_corrupt_files_detected() {
+        let text = "Le programme de protection des ressources Windows a trouvé des fichiers corrompus.";
+        assert_eq!(classify_sfc_status(text, true), "Fichiers corrompus détectés");
+    }
+
+    #[test]
+    fn nonzero_exit_without_recognized_text_is_warning() {
+        assert_eq!(classify_sfc_status("erreur inattendue", false), "Avertissement — Relancer en administrateur");
+    }
+
+    #[test]
+    fn success_with_unrecognized_text_is_generic() {
+        assert_eq!(classify_sfc_status("sortie inattendue", true), "Vérification complète");
     }
 }

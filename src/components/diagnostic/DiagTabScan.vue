@@ -68,7 +68,7 @@ const scanSolutions = computed<Solution[]>(() => {
   if (sr.last_update_days > 60) sol.push({ problem: `Dernière MAJ il y a ${sr.last_update_days} jours`, action: "Lancer Windows Update", repairKey: "wu_usoclient", severity: "warning" });
   if (sr.defender_definition_age_days > 7) sol.push({ problem: `Définitions Defender datant de ${sr.defender_definition_age_days} jours`, action: "Mettre à jour les signatures Defender", repairKey: "defender_update", severity: "warning" });
   if (sr.dism_status && !isDismHealthy(sr.dism_status)) sol.push({ problem: "Composant Windows corrompu (DISM)", action: "Lancer DISM /RestoreHealth", repairKey: "dism_restore", severity: "critical" });
-  if (sr.sfc_status && sr.sfc_status.toLowerCase().includes("corrupt")) sol.push({ problem: "Fichiers système corrompus (SFC)", action: "Exécuter SFC /scannow", repairKey: "sfc", severity: "critical" });
+  if (sr.sfc_status && !isSfcIntegre(sr.sfc_status)) sol.push({ problem: "Fichiers système corrompus (SFC)", action: "Exécuter SFC /scannow", repairKey: "sfc", severity: "critical" });
   if (sr.temp_folder_size_mb > 2048) sol.push({ problem: `Fichiers temp volumineux (${(sr.temp_folder_size_mb/1024).toFixed(1)} GB)`, action: "Nettoyer %TEMP%", repairKey: "temp_cleanup", severity: "warning" });
   if (sr.disk_usage?.some(d => d.used_percent > 90)) sol.push({ problem: "Disque(s) à plus de 90% de capacité", action: "Nettoyer les fichiers temporaires et le cache", repairKey: "diskcleanup", severity: "critical" });
   if (sr.disk_usage?.some(d => d.used_percent > 80)) sol.push({ problem: "Disque(s) à plus de 80% de capacité", action: "Activer Storage Sense", repairKey: "storage_sense", severity: "warning" });
@@ -95,7 +95,7 @@ const healthScore = computed(() => {
   if (sr.last_update_days > 30) score -= 5;
   if (sr.defender_definition_age_days > 7) score -= 5;
   if (sr.dism_status && !isDismHealthy(sr.dism_status)) score -= 15;
-  if (sr.sfc_status && sr.sfc_status.toLowerCase().includes('corrupt')) score -= 15;
+  if (sr.sfc_status && !isSfcIntegre(sr.sfc_status)) score -= 15;
   if (sr.temp_folder_size_mb > 2048) score -= 3;
   if (sr.disk_usage?.some(d => d.used_percent > 90)) score -= 10;
   if (!sr.tpm_present) score -= 5;
