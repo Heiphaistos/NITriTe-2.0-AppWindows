@@ -152,7 +152,7 @@ async function addUltimatePlan() {
         desc="Écrans connectés, résolutions, densité PPI et taux de rafraîchissement"
         color="purple"
       />
-      <div v-if="!monitors.length" class="diag-loading"><div class="diag-spinner"></div> Aucun écran détecté via WMI...</div>
+      <div v-if="!monitors.length" class="diag-empty">Aucun écran détecté via WMI</div>
       <template v-else>
         <NCollapse :title="'Écrans connectés — ' + monitors.length" storageKey="diag-devices-monitors" :defaultOpen="true">
           <div v-for="(m, i) in monitors" :key="i" class="card-block">
@@ -199,7 +199,7 @@ async function addUltimatePlan() {
           Scanner MAJ pilotes audio
         </NButton>
       </div>
-      <div v-if="!audioDevices.length" class="diag-loading"><div class="diag-spinner"></div> Aucun périphérique audio...</div>
+      <div v-if="!audioDevices.length" class="diag-empty">Aucun périphérique audio détecté</div>
       <template v-else>
         <NCollapse :title="'Périphériques audio — ' + audioDevices.length" storageKey="diag-devices-audio" :defaultOpen="true">
           <div v-for="(a, i) in audioDevices" :key="i" class="card-block">
@@ -256,7 +256,7 @@ async function addUltimatePlan() {
         </div>
       </div>
 
-      <div v-if="!usbDevices.length" class="diag-loading"><div class="diag-spinner"></div> Aucun périphérique USB détecté...</div>
+      <div v-if="!usbDevices.length" class="diag-empty">Aucun périphérique USB détecté</div>
       <template v-else>
         <NCollapse :title="'Périphériques USB — ' + usbDevices.length" storageKey="diag-devices-usb" :defaultOpen="true">
           <div class="table-wrap">
@@ -288,7 +288,7 @@ async function addUltimatePlan() {
         desc="Imprimantes et périphériques d'impression"
         color="slate"
       />
-      <div v-if="!printers.length" class="diag-loading"><div class="diag-spinner"></div> Aucune imprimante installée...</div>
+      <div v-if="!printers.length" class="diag-empty">Aucune imprimante installée</div>
       <template v-else>
         <NCollapse :title="'Imprimantes — ' + printers.length" storageKey="diag-devices-printers" :defaultOpen="true">
           <div v-for="(p, i) in printers" :key="i" class="card-block">
@@ -339,7 +339,7 @@ async function addUltimatePlan() {
         </NButton>
       </div>
 
-      <div v-if="!batteries.length" class="diag-loading"><div class="diag-spinner"></div> Pas de batterie détectée (PC de bureau)...</div>
+      <div v-if="!batteries.length" class="diag-empty">Pas de batterie détectée (PC de bureau)</div>
       <div v-for="(b, i) in batteries" :key="i" class="card-block">
         <div class="block-title">{{ b.name }}</div>
         <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">
@@ -413,7 +413,7 @@ async function addUltimatePlan() {
       </div>
 
       <NCollapse :title="'Plans d\'alimentation Windows — ' + powerPlans.length" storageKey="diag-devices-power" :defaultOpen="true">
-        <div v-if="!powerPlans.length" class="diag-loading"><div class="diag-spinner"></div> Aucun plan d'énergie...</div>
+        <div v-if="!powerPlans.length" class="diag-empty">Aucun plan d'énergie</div>
         <div v-for="(p, i) in powerPlans" :key="i" class="card-block">
           <div class="block-title">
             <span>{{ p.name }}</span>
