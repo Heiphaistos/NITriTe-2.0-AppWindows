@@ -72,8 +72,12 @@ async function openMas() {
 function actStatus(s: string): "success" | "danger" | "warning" | "default" {
   if (!s) return "default";
   const l = s.toLowerCase();
-  if (l.includes("licenci") || l.includes("activ")) return "success";
+  // Le check "danger" doit être évalué AVANT "success" : "Non licencié" (code
+  // WMI 0, le pire état possible) contient "licenci" comme sous-chaîne — testé
+  // dans l'ordre inverse, ce label était classé à tort "success" (badge vert)
+  // au lieu de "danger" (badge rouge), pour Windows ET Office (même helper).
   if (l.includes("non") || l.includes("invalide") || l.includes("expire")) return "danger";
+  if (l.includes("licenci") || l.includes("activ")) return "success";
   return "warning";
 }
 </script>
