@@ -3,6 +3,7 @@ use std::process::Command;
 use std::os::windows::process::CommandExt;
 
 use super::{SuspiciousService, AutorunEntry};
+use crate::maintenance::commands::decode_output;
 
 // === Advanced Security ===
 
@@ -74,7 +75,8 @@ $out | ConvertTo-Json -Compress
         .output();
 
     if let Ok(o) = output {
-        let text = String::from_utf8_lossy(&o.stdout);
+        // decode_output : displayName d'un antivirus tiers peut être localisé FR.
+        let text = decode_output(&o.stdout);
         let v: serde_json::Value = serde_json::from_str(text.trim()).unwrap_or_default();
         return AdvancedSecurityInfo {
             antivirus: v["AV"].as_str().unwrap_or("Inconnu").to_string(),
@@ -105,7 +107,10 @@ ConvertTo-Json -Compress -Depth 1
         .args(["-NoProfile", "-NonInteractive", "-Command", ps])
         .creation_flags(0x08000000)
         .output();
-    let text = match output { Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(), Err(_) => return vec![] };
+    // decode_output : DisplayName Win32_Service est fréquemment localisé FR
+    // (ex. « Service de plateforme de données agrégées »), confirmé en direct
+    // sur cette machine — from_utf8_lossy corrompt ces noms en mojibake.
+    let text = match output { Ok(o) => decode_output(&o.stdout), Err(_) => return vec![] };
     let val: serde_json::Value = serde_json::from_str(text.trim()).unwrap_or(serde_json::Value::Array(vec![]));
     let arr = match val {
         serde_json::Value::Array(a) => a,
@@ -150,7 +155,8 @@ $entries | Select-Object -First 25 | ConvertTo-Json -Compress -Depth 1
         .args(["-NoProfile", "-NonInteractive", "-Command", ps])
         .creation_flags(0x08000000)
         .output();
-    let text = match output { Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(), Err(_) => return vec![] };
+    // decode_output : valeurs de clés Run peuvent être un chemin/label accentué.
+    let text = match output { Ok(o) => decode_output(&o.stdout), Err(_) => return vec![] };
     let val: serde_json::Value = serde_json::from_str(text.trim()).unwrap_or(serde_json::Value::Array(vec![]));
     let arr = match val {
         serde_json::Value::Array(a) => a,
@@ -162,4 +168,22 @@ $entries | Select-Object -First 25 | ConvertTo-Json -Compress -Depth 1
         path: v["Path"].as_str().unwrap_or("").to_string(),
         location: v["Location"].as_str().unwrap_or("").to_string(),
     }).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Live, non-CI (ignorée par défaut) : confirme sur une vraie machine Windows
+    // que scan_suspicious_services() ne produit plus de mojibake sur un
+    // DisplayName Win32_Service réel (ex. « Intel® Graphics Software Service »,
+    // « Service de plateforme de données agrégées » — corruption confirmée avant
+    // le fix decode_output via un repro Rust direct sur cette machine).
+    #[test]
+    #[ignore]
+    fn scan_suspicious_services_no_mojibake_on_real_services() {
+        let services = scan_suspicious_services();
+        let bad = services.iter().find(|s| s.display_name.contains('\u{FFFD}') || s.name.contains('\u{FFFD}'));
+        assert!(bad.is_none(), "mojibake détecté dans un service réel : {:?}", bad);
+    }
 }
