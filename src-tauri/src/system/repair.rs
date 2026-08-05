@@ -177,7 +177,17 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
             "del /F /Q C:\\Windows\\System32\\spool\\PRINTERS\\* & ",
             "net start spooler"
         ).to_string())),
-        "search_reindex"  => Some(("Réindexer Windows Search",     "powershell -Command \"net stop WSearch; Remove-Item 'C:\\ProgramData\\Microsoft\\Search\\Data\\Applications\\Windows\\Windows.edb' -Force -EA SilentlyContinue; net start WSearch\"".to_string())),
+        // Le code de sortie de "cmd /C powershell -Command ..." reflète
+        // uniquement le DERNIER statement exécuté (`net start WSearch`) — un
+        // échec de Remove-Item sur Windows.edb (verrouillé si WSearch n'a
+        // pas fini de s'arrêter, ou permissions) était donc totalement
+        // invisible : le "repair" rapportait un succès même quand le fichier
+        // n'était jamais supprimé et qu'aucune réindexation n'était
+        // déclenchée. Vérifié en direct (repro exact du même enchaînement
+        // net stop/Remove-Item -EA SilentlyContinue/net start) : code de
+        // sortie 0 même quand la suppression échoue. Corrigé en vérifiant
+        // explicitement l'absence du fichier après tentative de suppression.
+        "search_reindex"  => Some(("Réindexer Windows Search",     "powershell -Command \"$f='C:\\ProgramData\\Microsoft\\Search\\Data\\Applications\\Windows\\Windows.edb'; net stop WSearch; Remove-Item $f -Force -EA SilentlyContinue; $stillThere = Test-Path $f; net start WSearch; if ($stillThere) { exit 1 } else { exit 0 }\"".to_string())),
         "time_sync"       => Some(("Synchroniser l'heure", concat!(
             "net stop w32tm & net start w32tm & ",
             "w32tm /resync /force & w32tm /resync"
