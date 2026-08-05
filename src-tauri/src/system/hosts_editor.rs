@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+use crate::maintenance::commands::decode_output;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct HostsEntry {
@@ -27,7 +28,12 @@ fn get_hosts_entries_blocking() -> Vec<HostsEntry> {
     let content = match std::fs::read_to_string(HOSTS_PATH) {
         Ok(c) => c,
         Err(_) => {
-            // Try PowerShell read
+            // Try PowerShell read. Ce repli n'est emprunté que lorsque le fichier
+            // hosts n'est PAS de l'UTF-8 valide (read_to_string a échoué) — donc
+            // exactement le cas où decode_output (repli OEM) est nécessaire ;
+            // from_utf8_lossy transformerait chaque caractère accentué d'un
+            // commentaire hérité (ANSI/OEM) en mojibake (confirmé : PowerShell
+            // réencode Get-Content -Raw en OEM sur la sortie standard, pas en UTF-8).
             #[cfg(target_os = "windows")]
             {
                 let o = Command::new("powershell")
@@ -35,7 +41,7 @@ fn get_hosts_entries_blocking() -> Vec<HostsEntry> {
                            &format!("Get-Content '{}' -Raw", HOSTS_PATH)])
                     .creation_flags(0x08000000).output().ok();
                 if let Some(o) = o {
-                    String::from_utf8_lossy(&o.stdout).to_string()
+                    decode_output(&o.stdout)
                 } else { return vec![]; }
             }
             #[cfg(not(target_os = "windows"))]
@@ -138,7 +144,7 @@ fn add_hosts_entry_blocking(ip: String, hostname: String, comment: String) -> Re
     {
         let o = Command::new("powershell").args(["-NoProfile","-NonInteractive","-Command",&ps]).creation_flags(0x08000000).output().map_err(|e| e.to_string())?;
         if !o.status.success() {
-            return Err(String::from_utf8_lossy(&o.stderr).to_string());
+            return Err(decode_output(&o.stderr));
         }
         // Add-Content peut rendre un exit code 0 meme quand l'ecriture echoue
         // reellement (droits insuffisants sur un fichier systeme, process enfant
@@ -181,7 +187,7 @@ $new | Set-Content '{}' -Encoding UTF8
     {
         let o = Command::new("powershell").args(["-NoProfile","-NonInteractive","-Command",&ps]).creation_flags(0x08000000).output().map_err(|e| e.to_string())?;
         if !o.status.success() {
-            return Err(String::from_utf8_lossy(&o.stderr).to_string());
+            return Err(decode_output(&o.stderr));
         }
         // Meme piege que add_hosts_entry : exit code 0 ne garantit pas que
         // l'ecriture a reellement eu lieu — on verifie que le fichier a
@@ -227,7 +233,7 @@ if ($idx -ge 0 -and $idx -lt $lines.Count) {{
     {
         let o = Command::new("powershell").args(["-NoProfile","-NonInteractive","-Command",&ps]).creation_flags(0x08000000).output().map_err(|e| e.to_string())?;
         if !o.status.success() {
-            return Err(String::from_utf8_lossy(&o.stderr).to_string());
+            return Err(decode_output(&o.stderr));
         }
         // Meme piege : verifier que la ligne ciblee a reellement le prefixe '#'
         // attendu apres coup, pas juste que powershell.exe est sorti en 0.
