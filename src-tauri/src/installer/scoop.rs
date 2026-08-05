@@ -6,6 +6,7 @@ use tauri::Emitter;
 
 use crate::error::NiTriTeError;
 use crate::installer::winget::InstallResult;
+use crate::maintenance::commands::decode_output;
 
 /// Chemin connu de scoop.exe (shim sous le profil de l'utilisateur courant).
 /// Meme raison que pour Chocolatey : un bootstrap effectue pendant la session
@@ -49,7 +50,10 @@ pub fn bootstrap_scoop() -> Result<(), NiTriTeError> {
         .output()
         .map_err(|e| NiTriTeError::System(format!("Erreur bootstrap Scoop: {}", e)))?;
     if !output.status.success() || !check_scoop() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        // decode_output : message d'erreur PowerShell réel (ex. « Impossible de
+        // se connecter au serveur distant ») corrompu par from_utf8_lossy —
+        // confirmé en direct sur cette machine.
+        let stderr = decode_output(&output.stderr);
         return Err(NiTriTeError::System(format!("Installation de Scoop echouee: {}", stderr.lines().next().unwrap_or("inconnue"))));
     }
     Ok(())
@@ -73,7 +77,10 @@ pub fn search_scoop_id(name: &str) -> Option<String> {
     if !output.status.success() {
         return None;
     }
-    let text = String::from_utf8_lossy(&output.stdout);
+    // decode_output : par cohérence avec bootstrap_scoop() — les buckets Scoop
+    // communautaires peuvent inclure des noms/paquets non-ASCII, substitution
+    // sûre (repli UTF-8 en premier) même si non déclenché sur cette machine.
+    let text = decode_output(&output.stdout);
     let normalized_query = normalize_pkg_name(name);
     // Format : lignes "'<bucket>' bucket:\n    <name> (<version>) ..."
     for line in text.lines() {
