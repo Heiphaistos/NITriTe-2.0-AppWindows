@@ -170,7 +170,7 @@ const estimatedSizeLabel = computed(() => {
 const backupInProgress = ref(false);
 const backupProgress = ref(0);
 const backupStatus = ref("");
-const backupResult = ref<{ path: string; items: string[] } | null>(null);
+const backupResult = ref<{ path: string; totalItems: number } | null>(null);
 
 async function createBackup() {
   const selected = backupItems.value.filter((i) => i.checked).map((i) => i.id);
@@ -220,9 +220,15 @@ async function createBackup() {
     });
 
     backupProgress.value = 100;
-    backupResult.value = { path: result.path, items: selected };
+    // total_items (comptage réel côté backend) et non selected.length : chaque
+    // collecteur est appelé via `if let Ok(data) = collect_X() { ... }` côté
+    // Rust — un élément dont la collecte échoue (droits admin manquants,
+    // requête WMI en échec...) est silencieusement omis du backup, mais le
+    // toast/panneau affichait quand même le nombre DEMANDÉ, jamais le nombre
+    // RÉELLEMENT sauvegardé.
+    backupResult.value = { path: result.path, totalItems: result.total_items };
     notify.success(
-      `Backup créé — ${selected.length} élément(s) sauvegardé(s)`,
+      `Backup créé — ${result.total_items} élément(s) sauvegardé(s)`,
       result.path
     );
   } catch (e: unknown) {
@@ -404,7 +410,7 @@ onMounted(loadBackups);
           <div class="result-info">
             <p class="result-title">Sauvegarde creee avec succes</p>
             <p class="result-path font-mono">{{ backupResult.path }}</p>
-            <p class="result-items">{{ backupResult.items.length }} element(s) sauvegardes</p>
+            <p class="result-items">{{ backupResult.totalItems }} element(s) sauvegardes</p>
           </div>
         </div>
       </NCard>
