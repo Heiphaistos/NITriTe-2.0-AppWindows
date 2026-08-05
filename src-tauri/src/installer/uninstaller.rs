@@ -432,6 +432,13 @@ function Is-SafeToDelete($item) {{
         if ($raw -like 'Menu:*') {{ $raw = ($raw -split ':', 2)[1] }}
         # Longueur minimum : évite les chemins racine trop courts
         if ($raw.Length -lt 12) {{ return $false }}
+        # Exception : dossier de groupe Menu Démarrer par-utilisateur — c'est
+        # EXACTEMENT le dossier que preview_residuals scanne pour taguer
+        # FS:Menu:, mais il vit sous \AppData\Roaming\Microsoft\Windows\ (blocage
+        # générique ci-dessous) : sans cette exception ciblée, la suppression de
+        # groupes Menu Démarrer était refusée à 100% depuis toujours, alors que
+        # c'est précisément la fonctionnalité que ce tag existe pour couvrir.
+        if ($raw -like '*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\*') {{ return $true }}
         foreach ($p in $sysFS) {{ if ($raw -like "*$p*") {{ return $false }} }}
         return $true
     }}
@@ -523,6 +530,11 @@ fn is_safe_residual(item: &str) -> bool {
             let raw = rest.strip_prefix("Menu:").unwrap_or(rest);
             if raw.len() < 12 { return false; }
             let raw_lower = raw.to_lowercase();
+            // Exception : dossier de groupe Menu Démarrer par-utilisateur — miroir
+            // de l'exception PS dans delete_residuals (voir commentaire là-bas).
+            if raw_lower.contains(r"\appdata\roaming\microsoft\windows\start menu\programs\") {
+                return true;
+            }
             !SYS_FS.iter().any(|p| raw_lower.contains(p))
         }
         "RK" => {
@@ -675,14 +687,21 @@ mod uninstaller_tests {
     }
 
     #[test]
-    fn menu_prefixed_residual_checked_against_real_path() {
-        // Comportement HÉRITÉ de la blocklist existante de delete_residuals (pas
-        // une décision prise ici) : un raccourci Menu Démarrer vit toujours sous
-        // "...\Microsoft\Windows\Start Menu\..." (ProgramData tous-users OU
-        // AppData\Roaming par-utilisateur), donc TOUJOURS bloqué par les entrées
-        // "\ProgramData\Microsoft\Windows\" / "\AppData\Roaming\Microsoft\Windows\".
-        // Le sous-préfixe Menu: est bien retiré avant vérification (ce test le
-        // prouve), mais le chemin réel qu'il révèle matche quand même le blocage.
+    fn menu_prefixed_start_menu_programs_folder_allowed() {
+        // Régression : preview_residuals ne scanne QUE
+        // %APPDATA%\Microsoft\Windows\Start Menu\Programs (par-utilisateur, jamais
+        // ProgramData tous-users) pour générer le tag FS:Menu: — vérifié en direct
+        // sur cette machine (menu_check.ps1) : sans l'exception ciblée, ce chemin
+        // était TOUJOURS refusé, rendant le nettoyage de groupes Menu Démarrer
+        // non-fonctionnel depuis toujours malgré l'apparence d'une feature qui marche.
+        assert!(is_safe_residual(r"FS:Menu:C:\Users\Momo\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\SomeApp"));
+    }
+
+    #[test]
+    fn menu_prefixed_programdata_all_users_still_blocked() {
+        // ProgramData\Microsoft\Windows\ (tous-users) n'est PAS ce que
+        // preview_residuals scanne — reste protégé par la blocklist générale,
+        // l'exception ne couvre que le cas AppData\Roaming réellement scanné.
         assert!(!is_safe_residual(r"FS:Menu:C:\ProgramData\Microsoft\Windows\Start Menu\Programs\SomeApp"));
     }
 
