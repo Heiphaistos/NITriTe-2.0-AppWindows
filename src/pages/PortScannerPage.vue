@@ -21,6 +21,7 @@ const loading     = ref(false);
 const autoRefresh = ref(false);
 const countdown   = ref(5);
 const searchQuery = ref("");
+const hasScanned  = ref(false);
 const PROTO_OPTS = ['ALL','TCP','UDP'] as const;
 const filterProto = ref<"ALL"|"TCP"|"UDP">("ALL");
 const filterState = ref("ALL");
@@ -85,6 +86,7 @@ async function scan(silent = false) {
   } catch (e: unknown) {
     if (!silent) notify.error("Erreur scan", String(e));
   } finally {
+    hasScanned.value = true;
     if (!silent) loading.value = false;
   }
 }
@@ -178,7 +180,10 @@ onUnmounted(stopAuto);
 
       <div v-else-if="ports.length === 0" class="empty-state">
         <Network :size="32" style="color:var(--text-muted);opacity:.2" />
-        <p>Cliquez sur "Scanner" pour analyser les ports</p>
+        <!-- Un scan réussi retournant 0 port est quasi impossible sur un Windows
+             en fonctionnement (toujours au moins quelques ports en écoute) —
+             hasScanned distingue "jamais scanné" de "scan probablement en échec". -->
+        <p>{{ hasScanned ? 'Aucun port détecté — le scan a peut-être échoué, réessayez.' : 'Cliquez sur "Scanner" pour analyser les ports' }}</p>
       </div>
 
       <div v-else class="table-wrap">
