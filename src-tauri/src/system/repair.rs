@@ -37,8 +37,8 @@ $out = @{}
 try {
     $dismExe = if (Test-Path 'C:\Windows\System32\Dism.exe') { 'C:\Windows\System32\Dism.exe' } else { 'dism.exe' }
     $dism = & $dismExe /Online /Cleanup-Image /CheckHealth 2>&1 | Out-String
-    if ($dism -match 'repairable') { $out.DismHealth = 'Repairable' }
-    elseif ($dism -match 'No component store corruption') { $out.DismHealth = 'Healthy' }
+    if ($dism -match 'repairable' -or $dism -match 'réparable') { $out.DismHealth = 'Repairable' }
+    elseif ($dism -match 'No component store corruption' -or $dism -match 'aucune corruption') { $out.DismHealth = 'Healthy' }
     else { $out.DismHealth = ($dism.Trim())[0..99] -join '' }
 } catch { $out.DismHealth = 'Unavailable' }
 
