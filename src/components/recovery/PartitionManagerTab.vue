@@ -189,9 +189,14 @@ function openMbr(diskIdx: number, mode: "backup" | "restore") {
   mbrMode.value = mode;
   mbrOutputPath.value = `C:\\NiTriTe\\MBR_backup_disk${diskIdx}.bin`;
   mbrRestorePath.value = "";
+  confirmTxt.value = "";
   modalMbr.value = true;
 }
 async function doMbrOp() {
+  // Restaurer un MBR incorrect peut rendre le disque non-démarrable — même
+  // exigence de saisie exacte que Format/Delete/Init dans ce même fichier
+  // (cycle 18), qui n'était jusqu'ici appliquée qu'à ces 3 actions.
+  if (mbrMode.value === "restore" && confirmTxt.value !== "RESTAURER") return;
   opLoading.value = true;
   try {
     if (mbrMode.value === "backup") {
@@ -529,9 +534,12 @@ function typeColor(t: string) {
             <input v-if="mbrMode === 'backup'" v-model="mbrOutputPath" class="inp" placeholder="C:\NiTriTe\MBR_backup.bin" />
             <input v-else v-model="mbrRestorePath" class="inp" placeholder="C:\NiTriTe\MBR_backup_disk0.bin" />
           </div>
+          <div v-if="mbrMode === 'restore'" class="field"><label>Tapez <code>RESTAURER</code> pour confirmer</label>
+            <input v-model="confirmTxt" class="inp" placeholder="RESTAURER" />
+          </div>
           <div class="modal-actions">
             <NButton variant="ghost" @click="modalMbr = false">Annuler</NButton>
-            <NButton variant="primary" :loading="opLoading" @click="doMbrOp">
+            <NButton variant="primary" :style="mbrMode === 'restore' ? { background: 'var(--warning)', color: '#000' } : undefined" :loading="opLoading" :disabled="mbrMode === 'restore' && confirmTxt !== 'RESTAURER'" @click="doMbrOp">
               {{ mbrMode === 'backup' ? 'Sauvegarder' : 'Restaurer' }}
             </NButton>
           </div>
