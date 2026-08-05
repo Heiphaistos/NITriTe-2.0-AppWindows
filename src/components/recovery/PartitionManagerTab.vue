@@ -70,7 +70,7 @@ onMounted(loadAll);
 
 // ── Opérations ─────────────────────────────────────────────────────────────────
 function openFormat(p: PartitionDetail) {
-  targetPart.value = p; fmtFs.value = "NTFS"; fmtLabel.value = p.label;
+  targetPart.value = p; fmtFs.value = "NTFS"; fmtLabel.value = p.label; confirmTxt.value = "";
   modalFormat.value = true;
 }
 function openLetter(p: PartitionDetail) {
@@ -88,7 +88,10 @@ function openInit(idx: number, label: string) {
 }
 
 async function doFormat() {
-  if (!targetPart.value) return;
+  // Formater efface les données aussi définitivement que Supprimer/Initialiser
+  // (mêmes modaux, même mention "effacées définitivement") — même exigence de
+  // saisie exacte pour rester cohérent, plutôt qu'un simple clic sur "Formater".
+  if (!targetPart.value || confirmTxt.value !== "FORMATER") return;
   opLoading.value = true;
   try {
     await invoke("format_partition_cmd", { letter: targetPart.value.letter, fs: fmtFs.value, label: fmtLabel.value });
@@ -412,9 +415,12 @@ function typeColor(t: string) {
           <div class="field"><label>Nom du volume</label>
             <input v-model="fmtLabel" class="inp" placeholder="Nouveau volume" />
           </div>
+          <div class="field"><label>Tapez <code>FORMATER</code> pour confirmer</label>
+            <input v-model="confirmTxt" class="inp" placeholder="FORMATER" />
+          </div>
           <div class="modal-actions">
             <NButton variant="ghost" @click="modalFormat = false">Annuler</NButton>
-            <NButton variant="primary" :loading="opLoading" @click="doFormat">Formater</NButton>
+            <NButton variant="primary" style="background:var(--danger)" :loading="opLoading" :disabled="confirmTxt !== 'FORMATER'" @click="doFormat">Formater</NButton>
           </div>
         </div>
       </div>
