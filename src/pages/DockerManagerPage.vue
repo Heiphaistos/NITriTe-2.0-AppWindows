@@ -108,6 +108,7 @@ async function loadVolumes() {
 
 // ── Container actions ────────────────────────────────────────────────────────
 async function containerAction(id: string, action: string, name: string) {
+  if (action === "rm" && !(await confirm(`Supprimer definitivement le container "${name}" ? Cette action est irreversible.`, { title: "Nitrite", kind: "warning" }))) return;
   actionLoading.value = id + action;
   try {
     await invoke("docker_container_action", { containerId: id, action });
@@ -121,6 +122,7 @@ async function containerAction(id: string, action: string, name: string) {
 }
 
 async function removeImage(id: string, repo: string) {
+  if (!(await confirm(`Supprimer definitivement l'image "${repo}" ? Cette action est irreversible.`, { title: "Nitrite", kind: "warning" }))) return;
   actionLoading.value = id;
   try {
     await invoke("docker_image_remove", { imageId: id });
