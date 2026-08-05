@@ -3,7 +3,8 @@ import { ref } from "vue";
 import { confirm, message } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
 import NButton from "@/components/ui/NButton.vue";
-import { HardDrive, Terminal, Activity, Trash2, CheckCircle, XCircle } from "lucide-vue-next";
+import NModal from "@/components/ui/NModal.vue";
+import { HardDrive, Terminal, Activity, Trash2, CheckCircle, XCircle, AlertTriangle } from "lucide-vue-next";
 
 interface RepairResult { success: boolean; output: string; command: string; }
 
@@ -19,6 +20,8 @@ const formatLabel = ref("");
 const cloneSrc = ref("");
 const cloneDst = ref("");
 const cleanDiskIndex = ref("");
+const showCleanConfirm = ref(false);
+const cleanConfirmText = ref("");
 
 async function run(cmd: string, label?: string) {
   isLoading.value = true;
@@ -66,6 +69,9 @@ async function formatVolume() {
   const letter = formatDrive.value.replace(":", "").trim().toUpperCase();
   const label = (formatLabel.value || "VOLUME").trim();
   if (!isValidVolumeLabel(label)) { output.value = "Étiquette invalide — alphanumériques, espaces, tirets, underscores uniquement."; lastSuccess.value = false; return; }
+  // Formater un volume est tout aussi irréversible que cleanDisk() ci-dessous
+  // (efface toutes les données du volume) mais n'avait aucune confirmation du tout.
+  if (!(await confirm(`⚠️ IRRÉVERSIBLE : formater le volume ${letter}: (toutes les données seront effacées) ?`, { title: "Nitrite", kind: "warning" }))) return;
   // Label quoté : un espace non quoté serait parsé comme paramètre séparé par format.com
   const cmd = `format ${letter}: /fs:${formatFs.value} /v:"${label}" /q /y`;
   await run(cmd, `Formater ${letter}: en ${formatFs.value}`);
@@ -81,12 +87,20 @@ async function cloneDisk() {
   await run(cmd, `Clone ${src} → ${dst}`);
 }
 
-async function cleanDisk() {
+async function requestCleanDisk() {
   const idx = cleanDiskIndex.value;
   if (!idx) return;
   if (!isValidDiskIndex(idx)) { await message("Index invalide — entrez un nombre entre 0 et 99.", { title: "Nitrite", kind: "error" }); return; }
-  const diskIndex = parseInt(idx, 10);
-  if (!(await confirm(`⚠️ IRRÉVERSIBLE : effacer toutes les partitions du disque ${diskIndex} ?`, { title: "Nitrite", kind: "warning" }))) return;
+  cleanConfirmText.value = "";
+  showCleanConfirm.value = true;
+}
+async function cleanDisk() {
+  // disk_wipe est le même appel que WinPERepairTab.vue::runWipe() (l'action la
+  // plus destructrice de l'app) — même exigence de re-saisie exacte de l'index
+  // pour rester cohérent entre les deux points d'entrée de cette commande.
+  if (cleanConfirmText.value.trim() !== cleanDiskIndex.value.trim()) return;
+  const diskIndex = parseInt(cleanDiskIndex.value, 10);
+  showCleanConfirm.value = false;
   isLoading.value = true;
   try {
     const r = await invoke<RepairResult>("disk_wipe", { diskIndex, method: "quick" });
@@ -170,9 +184,25 @@ async function cleanDisk() {
         </div>
       </div>
       <div class="tool-actions">
-        <NButton variant="danger" size="sm" :disabled="!cleanDiskIndex || isLoading" @click="cleanDisk">Clean disk {{ cleanDiskIndex }}</NButton>
+        <NButton variant="danger" size="sm" :disabled="!cleanDiskIndex || isLoading" @click="requestCleanDisk">Clean disk {{ cleanDiskIndex }}</NButton>
       </div>
     </div>
+
+    <!-- Confirm clean disk -->
+    <NModal :open="showCleanConfirm" title="Confirmer l'effacement" @close="showCleanConfirm = false">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px">
+        <AlertTriangle :size="32" style="color:var(--danger)" />
+        <p>Effacement <strong>IRRÉVERSIBLE</strong> de toutes les partitions du disque {{ cleanDiskIndex }}.</p>
+        <div class="form-group" style="width:100%">
+          <label class="form-label">Retapez <strong>{{ cleanDiskIndex }}</strong> pour confirmer :</label>
+          <input v-model="cleanConfirmText" class="form-input" :placeholder="cleanDiskIndex" />
+        </div>
+      </div>
+      <template #footer>
+        <NButton variant="ghost" @click="showCleanConfirm = false">Annuler</NButton>
+        <NButton variant="danger" :disabled="cleanConfirmText.trim() !== cleanDiskIndex" @click="cleanDisk">Confirmer</NButton>
+      </template>
+    </NModal>
 
     <!-- Output -->
     <div v-if="output" class="output-panel" :class="lastSuccess === false ? 'error' : lastSuccess ? 'success' : ''">
