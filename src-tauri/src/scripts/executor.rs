@@ -763,6 +763,12 @@ fn is_script_path_allowed(p: &std::path::Path) -> bool {
     #[cfg(target_os = "windows")]
     {
         if let Some(s) = p.to_str() {
+            // canonicalize() renvoie le préfixe verbatim étendu `\\?\` sur Windows —
+            // sans le strip, b[0] vaut '\\' (jamais une lettre de lecteur) et cette
+            // fonction rejetait TOUJOURS, y compris les chemins légitimes déjà
+            // validés par canonicalize() (même piège que trash_file_blocking/
+            // delete_dll/save_content_to_path, cycles 6-8).
+            let s = s.strip_prefix(r"\\?\").unwrap_or(s);
             let b = s.as_bytes();
             return b.len() >= 3
                 && b[0].is_ascii_alphabetic()
@@ -905,5 +911,37 @@ mod executor_tests {
         let s = script_interactive("Admin Interactive", "", "", "", true);
         assert!(s.requires_admin);
         assert!(s.requires_interactive);
+    }
+
+    // ── is_script_path_allowed ─────────────────────────────────────────────────
+    // Régression : canonicalize() renvoie le préfixe verbatim `\\?\` sur Windows.
+    // Sans le strip, is_script_path_allowed rejetait TOUJOURS (b[0] valait '\\',
+    // jamais une lettre de lecteur) — list_script_files/read_script_file/
+    // save_script_file (éditeur de scripts, ScriptsPage.vue) étaient cassés à 100%.
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn verbatim_drive_path_is_allowed() {
+        let p = std::path::Path::new(r"\\?\C:\Users\Momo\Documents\script.ps1");
+        assert!(is_script_path_allowed(p));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn verbatim_other_drive_letter_is_allowed() {
+        let p = std::path::Path::new(r"\\?\D:\Scripts\backup.ps1");
+        assert!(is_script_path_allowed(p));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn non_verbatim_drive_path_still_works() {
+        assert!(is_script_path_allowed(std::path::Path::new(r"C:\Users\Momo\script.ps1")));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn path_without_drive_letter_is_rejected() {
+        assert!(!is_script_path_allowed(std::path::Path::new(r"\\?\UNC\server\share\script.ps1")));
     }
 }
