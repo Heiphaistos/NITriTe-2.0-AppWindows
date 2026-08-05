@@ -341,14 +341,22 @@ fn sanitize_quarantine_entry_name(name: &str) -> Option<String> {
 }
 
 fn clear_quarantine_blocking(entry_name: Option<String>) -> bool {
+    // Contrairement à toutes les autres fonctions PS de ce fichier, ce script
+    // se terminait par un `$true` NU (pas `| ConvertTo-Json`) : PowerShell
+    // écrit alors la représentation texte "True" (majuscule) sur stdout, qui
+    // n'est PAS du JSON valide (RFC 8259 exige "true" minuscule). ps_run()
+    // échoue donc silencieusement à parser cette sortie et renvoie None →
+    // clear_quarantine() rapportait TOUJOURS un échec au frontend, même
+    // quand la suppression avait réellement réussi. Vérifié en direct :
+    // `$true | ConvertTo-Json -Compress` produit bien "true" (minuscule).
     let ps = if let Some(name) = entry_name {
         let safe = match sanitize_quarantine_entry_name(&name) {
             Some(s) => s,
             None => return false,
         };
-        format!("$p=\"$env:LOCALAPPDATA\\NiTriTe\\quarantine\\{safe}\";if(Test-Path $p){{Remove-Item $p -Recurse -Force -EA SilentlyContinue}};$true")
+        format!("$p=\"$env:LOCALAPPDATA\\NiTriTe\\quarantine\\{safe}\";if(Test-Path $p){{Remove-Item $p -Recurse -Force -EA SilentlyContinue}};$true | ConvertTo-Json -Compress")
     } else {
-        "$p=\"$env:LOCALAPPDATA\\NiTriTe\\quarantine\";if(Test-Path $p){Remove-Item $p -Recurse -Force -EA SilentlyContinue};$true".to_string()
+        "$p=\"$env:LOCALAPPDATA\\NiTriTe\\quarantine\";if(Test-Path $p){Remove-Item $p -Recurse -Force -EA SilentlyContinue};$true | ConvertTo-Json -Compress".to_string()
     };
     ps_run(&ps).is_some()
 }
@@ -473,5 +481,19 @@ mod tests {
         let r = sanitize_quarantine_entry_name(r"..\..").unwrap();
         assert!(!r.contains('\\'));
         assert!(!r.contains('/'));
+    }
+
+    // Live, non-CI (ignorée par défaut) : confirme sur une vraie machine
+    // Windows que clear_quarantine_blocking() renvoie bien true après le
+    // fix. Cible une entrée qui n'existe pas (Test-Path=false côté PS) —
+    // Remove-Item ne s'exécute donc jamais, aucun fichier réel n'est
+    // touché ; seule la sortie JSON du "$true | ConvertTo-Json" final est
+    // exercée, ce qui était précisément le bug (parse échouait sur "True"
+    // brut, renvoyait toujours false même en cas de succès réel).
+    #[test]
+    #[ignore]
+    fn clear_quarantine_nonexistent_entry_reports_true_not_false() {
+        let ok = clear_quarantine_blocking(Some("nitrite_test_nonexistent_entry_xyz".to_string()));
+        assert!(ok, "clear_quarantine_blocking devrait renvoyer true (pas de parse JSON cassé sur \"True\" brut)");
     }
 }
