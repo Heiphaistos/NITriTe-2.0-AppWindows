@@ -43,7 +43,10 @@
 
       <!-- Entries -->
       <div class="boot-section-title"><List :size="15" /> Entrées de démarrage ({{ config.entries.length }})</div>
-      <div class="boot-entries">
+      <div v-if="config.entries.length === 0" class="boot-entries" style="padding:12px;color:var(--text-muted)">
+        ⚠ Aucune entrée de démarrage détectée — la lecture de la configuration BCD a peut-être échoué. Réessayez ou consultez les journaux.
+      </div>
+      <div v-else class="boot-entries">
         <div v-for="e in config.entries" :key="e.id" class="boot-entry" :class="e.is_default ? 'boot-default' : ''">
           <div class="boot-entry-left">
             <div class="boot-entry-icon" :class="e.is_default ? 'icon-default' : 'icon-normal'">
