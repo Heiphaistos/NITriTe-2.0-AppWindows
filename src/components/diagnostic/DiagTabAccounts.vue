@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
 import { cachedInvoke } from "@/composables/useCachedInvoke";
 import NBadge from "@/components/ui/NBadge.vue";
@@ -13,6 +14,11 @@ const togglingUser = ref<string | null>(null);
 const toggleMsg = ref("");
 
 async function toggleUser(name: string, enable: boolean) {
+  // Désactiver un compte n'avait aucune confirmation (activer reste sans risque).
+  // Le bouton "Désactiver" est déjà masqué pour les comptes admin (voir template,
+  // corrigé pour utiliser le vrai champ is_admin au lieu d'une recherche de
+  // substring "admin" dans le nom) — cette confirmation couvre les comptes restants.
+  if (!enable && !(await confirm(`Désactiver le compte "${name}" ?`, { title: "Nitrite", kind: "warning" }))) return;
   togglingUser.value = name;
   toggleMsg.value = "";
   try {
@@ -170,7 +176,7 @@ onMounted(async () => {
                 </td>
                 <td style="padding:6px 10px;color:var(--text-secondary);font-size:11px">{{ u.last_logon }}</td>
                 <td style="padding:4px 6px">
-                  <button v-if="u.enabled && !u.name.toLowerCase().includes('admin')"
+                  <button v-if="u.enabled && !u.is_admin"
                     @click="toggleUser(u.name, false)"
                     :disabled="togglingUser === u.name"
                     style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.08);color:#ef4444;cursor:pointer">
