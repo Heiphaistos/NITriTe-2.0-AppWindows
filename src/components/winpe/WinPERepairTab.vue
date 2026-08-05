@@ -28,6 +28,7 @@ const bitlockerStatus = ref<BitLockerStatus | null>(null);
 const wipeDiskIndex = ref<number | null>(null);
 const wipeMethod = ref("quick");
 const showWipeConfirm = ref(false);
+const wipeConfirmText = ref("");
 
 const loading = ref({
   mbr: false, boot: false, bcd: false, scanos: false,
@@ -131,8 +132,15 @@ async function runUnlockBitlocker() {
   finally { loading.value.bitlockerUnlock = false; }
 }
 
-function confirmWipe() { showWipeConfirm.value = true; }
+function confirmWipe() { wipeConfirmText.value = ""; showWipeConfirm.value = true; }
 async function runWipe() {
+  // disk_wipe est l'action la plus destructrice de toute l'app (efface un
+  // disque ENTIER, contrairement à format/supprimer/initialiser une simple
+  // partition dans PartitionManagerTab.vue qui exigent déjà une saisie exacte)
+  // — sans liste de disques réels affichée ici (juste un index numéroté au
+  // clavier), une saisie exacte du numéro re-tapé est le minimum pour donner
+  // à l'utilisateur une chance de remarquer une faute de frappe avant l'effacement.
+  if (wipeConfirmText.value.trim() !== String(wipeDiskIndex.value)) return;
   showWipeConfirm.value = false;
   loading.value.wipe = true;
   try {
@@ -261,10 +269,14 @@ async function runWipe() {
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px">
         <AlertTriangle :size="32" style="color:var(--danger)" />
         <p>Effacement <strong>IRRÉVERSIBLE</strong> du Disque {{ wipeDiskIndex }} en mode <strong>{{ wipeMethod === 'secure' ? 'Sécurisé' : 'Rapide' }}</strong>.</p>
+        <div class="form-group" style="width:100%">
+          <label class="form-label">Retapez <strong>{{ wipeDiskIndex }}</strong> pour confirmer :</label>
+          <input v-model="wipeConfirmText" class="form-input" :placeholder="String(wipeDiskIndex)" />
+        </div>
       </div>
       <template #footer>
         <NButton variant="ghost" @click="showWipeConfirm = false">Annuler</NButton>
-        <NButton variant="danger" @click="runWipe">Confirmer</NButton>
+        <NButton variant="danger" :disabled="wipeConfirmText.trim() !== String(wipeDiskIndex)" @click="runWipe">Confirmer</NButton>
       </template>
     </NModal>
   </div>
