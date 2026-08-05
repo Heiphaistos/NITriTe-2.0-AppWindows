@@ -2,7 +2,7 @@
 import { ref, onMounted } from "vue";
 import { invoke } from "@/utils/invoke";
 import type { AppConfig } from "@/types/diagnostic";
-import { save, open } from "@tauri-apps/plugin-dialog";
+import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
 import { useNotificationStore } from "@/stores/notifications";
 import { useAppStore } from "@/stores/app";
@@ -107,6 +107,9 @@ async function applyProfile(profile: Profile) {
 }
 
 async function deleteProfile(name: string) {
+  // Suppression permanente sans sauvegarde ni export automatique — même
+  // convention que deleteDll/deleteTask/removeStartup ailleurs dans le repo.
+  if (!(await confirm(`Supprimer le profil "${name}" ?\n\nCette action est irréversible.`, { title: "Nitrite", kind: "warning" }))) return;
   deleting.value = name;
   try {
     await invoke("delete_profile_cmd", { name });
