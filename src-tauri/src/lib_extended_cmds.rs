@@ -229,7 +229,7 @@ async fn check_windows_updates() -> Result<Vec<WinUpdate>, NiTriTeError> {
             .output()
             .map_err(|e| NiTriTeError::System(e.to_string()))?;
 
-        let text = String::from_utf8_lossy(&output.stdout).to_string();
+        let text = crate::maintenance::commands::decode_output(&output.stdout);
         let json: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
 
         Ok(json
@@ -303,7 +303,10 @@ try {
                 Ok(Some(_)) => {
                     let mut buf = Vec::new();
                     if let Some(mut out) = child.stdout.take() { let _ = out.read_to_end(&mut buf); }
-                    let text = String::from_utf8_lossy(&buf);
+                    // decode_output : le titre des mises à jour Windows (u.Title)
+                    // est du texte français réel — confirmé en direct sur cette
+                    // machine (« Mise à jour de la sélection disjointe... »).
+                    let text = crate::maintenance::commands::decode_output(&buf);
                     let t = text.trim();
                     if t.is_empty() || t == "[]" { return vec![]; }
                     let json_text = if t.starts_with('{') { format!("[{}]", t) } else { t.to_string() };
@@ -447,7 +450,9 @@ $result | ConvertTo-Json -Depth 4 -Compress
                 Ok(Some(_)) => {
                     let mut buf = Vec::new();
                     if let Some(mut out) = child.stdout.take() { let _ = out.read_to_end(&mut buf); }
-                    return serde_json::from_str(String::from_utf8_lossy(&buf).trim())
+                    // decode_output : Description de partage SMB, SSID Wi-Fi,
+                    // etc. peuvent être accentués.
+                    return serde_json::from_str(crate::maintenance::commands::decode_output(&buf).trim())
                         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
                 }
                 Ok(None) => {
@@ -506,7 +511,7 @@ $rows | ConvertTo-Json -Compress
             .creation_flags(0x08000000)
             .output();
         if let Ok(o) = out {
-            let text = String::from_utf8_lossy(&o.stdout);
+            let text = crate::maintenance::commands::decode_output(&o.stdout);
             let t = text.trim();
             if t.is_empty() || t == "null" { return vec![]; }
             let json_text = if t.starts_with('{') { format!("[{}]", t) } else { t.to_string() };
@@ -553,7 +558,7 @@ async fn upgrade_scoop_all(excluded_ids: Option<Vec<String>>, window: tauri::Win
             .creation_flags(0x08000000)
             .output()
             .map_err(|e| NiTriTeError::System(e.to_string()))?;
-        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let text = crate::maintenance::commands::decode_output(&out.stdout);
         let _ = window.emit("scoop-upgrade-done", &text);
         Ok(())
     }).await.map_err(|e| NiTriTeError::System(e.to_string()))?
