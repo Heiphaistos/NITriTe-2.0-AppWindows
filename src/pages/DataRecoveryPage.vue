@@ -5,6 +5,7 @@ import { invoke, isTauriContext } from "@/utils/invoke";
 import NButton from "@/components/ui/NButton.vue";
 import NSpinner from "@/components/ui/NSpinner.vue";
 import { useNotificationStore } from "@/stores/notifications";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import RecoveryTabDisk from "@/components/recovery/RecoveryTabDisk.vue";
 import RecoveryShadowCompare from "@/components/recovery/RecoveryShadowCompare.vue";
 import DiskImagerTab from "@/components/recovery/DiskImagerTab.vue";
@@ -41,6 +42,11 @@ async function createShadow() {
 }
 
 async function deleteShadow(s: ShadowCopy) {
+  // Suppression VSS irréversible ($s.Delete() côté Rust, pas de corbeille) sur
+  // la page dont le seul but est de récupérer des données perdues — supprimer
+  // un point de restauration par erreur retire définitivement un moyen de
+  // récupération. Même sévérité que clearQuarantineEntry (CleanerPage.vue).
+  if (!(await confirm(`Supprimer ce point de restauration du ${formatDate(s.creation_time)} ?\n\nCette action est irréversible.`, { title: "Nitrite", kind: "warning" }))) return;
   try {
     await invoke<string>("delete_shadow_copy_cmd", { shadowId: s.id });
     notify.success("Shadow copy supprimée", "");
