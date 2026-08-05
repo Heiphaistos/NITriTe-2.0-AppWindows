@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::os::windows::process::CommandExt;
 
 use crate::error::NiTriTeError;
+use crate::maintenance::commands::decode_output;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ShellInfo {
@@ -107,8 +108,12 @@ pub fn run_in_shell(shell_id: &str, command: &str, timeout_secs: u64) -> Result<
 
     // Tronquer la sortie si trop volumineuse
     let max_len = 100_000;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    // decode_output : sortie d'un shell libre (dir/Get-ChildItem/git log...) —
+    // confirmé en direct sur cette machine : cmd.exe et powershell émettent
+    // en OEM leurs propres en-têtes localisés (« Répertoire : » → mojibake),
+    // sans parler des noms de fichiers/dossiers accentués de l'utilisateur.
+    let stdout = decode_output(&output.stdout);
+    let stderr = decode_output(&output.stderr);
 
     // Troncature par caractères : slicer par octets casse sur une frontière
     // multi-octets (accents, box-drawing, emoji dans la sortie) → panic.
@@ -160,9 +165,33 @@ fn find_git_bash() -> Option<String> {
 fn which_exe(name: &str) -> Option<String> {
     let output = Command::new("where").arg(name).creation_flags(0x08000000).output().ok()?;
     if output.status.success() {
-        let path = String::from_utf8_lossy(&output.stdout);
+        let path = decode_output(&output.stdout);
         path.lines().next().map(|s| s.trim().to_string())
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Live, non-CI (ignorée par défaut) : confirme sur une vraie machine Windows
+    // que run_in_shell() ne produit plus de mojibake sur les en-têtes localisés
+    // de PowerShell (« Répertoire : ») ni sur un nom de fichier accentué —
+    // corruption confirmée avant le fix decode_output via un repro Rust direct.
+    #[test]
+    #[ignore]
+    fn run_in_shell_powershell_no_mojibake() {
+        let dir = std::env::temp_dir().join("nitrite_test_terminal_encoding");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Résumé de réunion.txt"), b"test").unwrap();
+
+        let cmd = format!("Get-ChildItem '{}'", dir.to_string_lossy());
+        let result = run_in_shell("powershell", &cmd, 30).expect("run_in_shell failed");
+
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert!(!result.stdout.contains('\u{FFFD}'), "mojibake détecté dans stdout : {:?}", result.stdout);
     }
 }
