@@ -325,11 +325,55 @@ pub struct DownloadProgress {
 }
 
 async fn http_client() -> reqwest::Client {
+    // redirect::Policy::none() : reqwest suit les redirections HTTP par
+    // défaut SANS jamais revalider l'hôte de destination contre
+    // validate_download_url() — un serveur pourrait rediriger (3xx) vers un
+    // hôte hors whitelist et la protection serait contournée silencieusement.
+    // Les redirections sont suivies manuellement (voir get_validated) avec
+    // validation de CHAQUE saut pour les téléchargements de fichiers.
     reqwest::Client::builder()
         .user_agent("Nitrite/26.33.0")
         .timeout(std::time::Duration::from_secs(3600))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap_or_default()
+}
+
+const MAX_REDIRECTS: u8 = 5;
+
+/// Résout l'URL cible d'une redirection HTTP (gère les `Location` relatifs
+/// selon l'URL courante) puis la valide contre la whitelist de domaines.
+fn resolve_and_validate_redirect(current_url: &str, location: &str) -> Result<String, String> {
+    let target = if location.starts_with("http://") || location.starts_with("https://") {
+        location.to_string()
+    } else {
+        reqwest::Url::parse(current_url).ok()
+            .and_then(|base| base.join(location).ok())
+            .map(|u| u.to_string())
+            .ok_or_else(|| format!("Redirection relative invalide: {}", location))?
+    };
+    validate_download_url(&target)?;
+    Ok(target)
+}
+
+/// Envoie une requête GET en suivant manuellement les redirections HTTP,
+/// en validant l'hôte de CHAQUE saut avant de le suivre (voir http_client).
+async fn get_validated(client: &reqwest::Client, url: &str) -> Result<reqwest::Response, String> {
+    validate_download_url(url)?;
+    let mut current = url.to_string();
+    for _ in 0..MAX_REDIRECTS {
+        let resp = client.get(&current).send().await.map_err(|e| e.to_string())?;
+        if resp.status().is_redirection() {
+            let location = resp.headers().get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or("Redirection sans en-tête Location")?
+                .to_string();
+            current = resolve_and_validate_redirect(&current, &location)?;
+            continue;
+        }
+        return Ok(resp);
+    }
+    Err("Trop de redirections (limite atteinte)".into())
 }
 
 /// Télécharge llama-server.exe depuis la dernière release GitHub.
@@ -437,7 +481,7 @@ async fn download_with_progress(
     let _ = tokio::fs::remove_file(&tmp_path).await;
 
     let result = async {
-        let mut resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+        let mut resp = get_validated(client, url).await?;
         let mut file = tokio::fs::File::create(&tmp_path).await.map_err(|e| e.to_string())?;
         let mut downloaded: u64 = 0;
         let total_mb = total_size as f64 / 1_048_576.0;
@@ -620,5 +664,48 @@ mod tests {
     #[test]
     fn url_with_port_accepted() {
         assert!(validate_download_url("https://github.com:443/file.zip").is_ok());
+    }
+
+    // ── resolve_and_validate_redirect ──────────────────────────────────────────
+    // Régression : reqwest suit les redirections HTTP par défaut sans jamais
+    // revalider l'hôte de destination — un 3xx vers un hôte hors whitelist
+    // contournerait totalement validate_download_url(). Ces tests couvrent la
+    // logique de résolution+validation appliquée à chaque saut.
+
+    #[test]
+    fn redirect_to_allowed_absolute_host_accepted() {
+        let r = resolve_and_validate_redirect(
+            "https://github.com/x/y/releases/download/v1/file.zip",
+            "https://objects.githubusercontent.com/real-file.zip",
+        );
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn redirect_to_disallowed_absolute_host_rejected() {
+        let r = resolve_and_validate_redirect(
+            "https://github.com/x/y/releases/download/v1/file.zip",
+            "https://evil.com/malware.exe",
+        );
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn redirect_to_relative_location_resolved_against_base_and_validated() {
+        // Location relatif sur un hôte autorisé -> reste sur le même hôte -> accepté
+        let r = resolve_and_validate_redirect(
+            "https://huggingface.co/repo/resolve/main/model.gguf",
+            "/repo/resolve/main/model-v2.gguf",
+        ).unwrap();
+        assert!(r.starts_with("https://huggingface.co/"));
+    }
+
+    #[test]
+    fn redirect_to_http_downgrade_rejected() {
+        let r = resolve_and_validate_redirect(
+            "https://github.com/x/y/releases/download/v1/file.zip",
+            "http://github.com/x/y/file.zip",
+        );
+        assert!(r.is_err());
     }
 }
