@@ -25,17 +25,6 @@ pub struct BootConfig {
     pub debug_mode: bool,
 }
 
-fn ps_out(ps: &str) -> String {
-    #[cfg(target_os = "windows")]
-    {
-        let o = Command::new("powershell").args(["-NoProfile","-NonInteractive","-Command",ps]).creation_flags(0x08000000).output();
-        if let Ok(o) = o { return decode_output(&o.stdout).to_string(); }
-    }
-    #[cfg(not(target_os = "windows"))]
-    let _ = ps;
-    String::new()
-}
-
 // Anti-freeze : bcdedit est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
 pub async fn get_boot_config() -> BootConfig {
@@ -185,12 +174,41 @@ fn set_default_boot_blocking(entry_id: String) -> Result<String, String> {
 
 // Anti-freeze : shutdown.exe est bloquant — jamais inline sur le thread de commande.
 #[tauri::command]
-pub async fn boot_to_recovery() -> String {
+pub async fn boot_to_recovery() -> Result<String, String> {
     tokio::task::spawn_blocking(boot_to_recovery_blocking)
         .await
-        .unwrap_or_default()
+        .map_err(|e| e.to_string())?
 }
 
-fn boot_to_recovery_blocking() -> String {
-    ps_out("shutdown /r /o /f /t 0")
+/// `shutdown /r /o` exige SeShutdownPrivilege — refusé par une stratégie de
+/// groupe ou un contexte restreint sur certains postes, avec un vrai échec
+/// (pas de redémarrage). L'ancienne version (`ps_out`, type de retour `String`
+/// sans `Result`) ne vérifiait aucun code de sortie et ne pouvait structurellement
+/// pas remonter d'échec : le frontend affichait toujours "le système va
+/// redémarrer..." même quand shutdown.exe échouait silencieusement. Même
+/// convention que `run_bcdedit` (appel direct de l'exe, code de sortie réel).
+fn boot_to_recovery_blocking() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let o = Command::new("shutdown")
+            .args(["/r", "/o", "/f", "/t", "0"])
+            .creation_flags(0x08000000)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if o.status.success() {
+            Ok("Redémarrage en mode récupération lancé".to_string())
+        } else {
+            let stderr = decode_output(&o.stderr).trim().to_string();
+            let stdout = decode_output(&o.stdout).trim().to_string();
+            Err(if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                "Échec du redémarrage (droits administrateur requis ?)".to_string()
+            })
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("Windows uniquement".to_string())
 }
