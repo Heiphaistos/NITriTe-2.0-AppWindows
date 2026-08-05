@@ -81,8 +81,7 @@ async function scan() {
   loading.value = false;
 }
 
-async function deleteDll(path: string) {
-  if (!(await confirm(`Supprimer ${path} ?\n\nAttention : la suppression d'une DLL système ou tierce peut déstabiliser le système.`, { title: "Nitrite", kind: "warning" }))) return;
+async function deleteDllInner(path: string) {
   deleting.value = new Set(deleting.value).add(path);
   try {
     await invoke("delete_dll", { path });
@@ -97,6 +96,11 @@ async function deleteDll(path: string) {
   deleting.value = next;
 }
 
+async function deleteDll(path: string) {
+  if (!(await confirm(`Supprimer ${path} ?\n\nAttention : la suppression d'une DLL système ou tierce peut déstabiliser le système.`, { title: "Nitrite", kind: "warning" }))) return;
+  await deleteDllInner(path);
+}
+
 function toggleSelect(path: string) {
   const next = new Set(selected.value);
   if (next.has(path)) next.delete(path); else next.add(path);
@@ -106,8 +110,11 @@ function toggleSelect(path: string) {
 async function deleteSelected() {
   if (!selected.value.size) return;
   if (!(await confirm(`Supprimer ${selected.value.size} DLL(s) ?\n\nCette action est irréversible.`, { title: "Nitrite", kind: "warning" }))) return;
+  // deleteDllInner (pas deleteDll) : la confirmation ci-dessus couvre déjà tout
+  // le lot — reprompter par fichier forcerait un clic supplémentaire par DLL,
+  // rendant la suppression groupée pire qu'une suppression une par une.
   for (const path of selected.value) {
-    await deleteDll(path);
+    await deleteDllInner(path);
   }
 }
 </script>
