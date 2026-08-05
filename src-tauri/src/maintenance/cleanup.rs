@@ -45,24 +45,43 @@ pub fn clean_temp_files() -> Result<CleanupResult, NiTriTeError> {
         ));
     }
 
-    let mut freed: u64 = 0;
+    // Propager un échec de lecture du dossier plutôt que le ravaler en
+    // silence : l'ancien code (if let Ok(entries) = ...) sans branche else
+    // rendait un succès inconditionnel même si %TEMP% était illisible.
+    let entries = std::fs::read_dir(&temp_dir)
+        .map_err(|e| NiTriTeError::System(format!("Lecture de {} impossible: {}", temp_dir.display(), e)))?;
 
-    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
-        for entry in entries.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                if meta.is_file() {
-                    freed += meta.len();
-                    let _ = std::fs::remove_file(entry.path());
+    let mut freed: u64 = 0;
+    let mut skipped: u32 = 0;
+
+    for entry in entries.flatten() {
+        if let Ok(meta) = entry.metadata() {
+            if meta.is_file() {
+                // Ne compter la taille libérée QUE si la suppression a
+                // réellement réussi — l'ancien code additionnait meta.len()
+                // avant même de tenter remove_file() et ignorait son
+                // résultat (let _ = ...), donc un fichier verrouillé (cas
+                // courant pour %TEMP% : cache navigateur, app en cours)
+                // était compté comme libéré alors qu'il ne l'était pas.
+                match std::fs::remove_file(entry.path()) {
+                    Ok(()) => freed += meta.len(),
+                    Err(_) => skipped += 1,
                 }
             }
         }
     }
 
+    let message = if skipped > 0 {
+        format!("{:.1} MB liberes ({} fichier(s) verrouille(s) ignore(s))", freed as f64 / 1_048_576.0, skipped)
+    } else {
+        format!("{:.1} MB liberes", freed as f64 / 1_048_576.0)
+    };
+
     Ok(CleanupResult {
         action: "Supprimer fichiers temporaires".into(),
         success: true,
         freed_mb: freed as f64 / 1_048_576.0,
-        message: format!("{:.1} MB liberes", freed as f64 / 1_048_576.0),
+        message,
     })
 }
 
