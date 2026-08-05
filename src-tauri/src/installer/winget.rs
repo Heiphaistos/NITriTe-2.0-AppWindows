@@ -166,7 +166,21 @@ fn stream_winget_upgrade(args: &[&str], window: &tauri::Window) -> Result<(), Ni
         }
     }
 
-    child.wait()?;
+    // child.wait()? seul ne propage QUE les erreurs d'E/S (process introuvable
+    // etc.) — un winget qui echoue reellement (paquet verrouille, telechargement
+    // interrompu, confirmation interactive malgre --silent) renvoie un
+    // ExitStatus valide avec success()=false, jamais un Err. upgrade_all()
+    // renvoyait donc toujours Ok(()) meme quand AUCUNE mise a jour n'avait
+    // reellement abouti, et les deux appelants (UpdatesPage.vue, DiagTabUpdates.vue)
+    // font confiance a ce succes pour afficher un toast "termine" et vider la
+    // liste des mises a jour en attente.
+    let status = child.wait()?;
+    if !status.success() {
+        return Err(NiTriTeError::System(format!(
+            "winget a échoué (code {})",
+            status.code().unwrap_or(-1)
+        )));
+    }
     Ok(())
 }
 
