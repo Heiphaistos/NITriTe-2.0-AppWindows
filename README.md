@@ -1,8 +1,8 @@
 <div align="center">
-  <h1>🔧 NiTriTe 8.145.0</h1>
+  <h1>🔧 NiTriTe 8.146.0</h1>
   <p><strong>Suite de diagnostic, réparation, optimisation et administration Windows — 44 outils, interface Tauri v2 native.</strong></p>
 
-  ![Version](https://img.shields.io/badge/version-8.145.0-blue)
+  ![Version](https://img.shields.io/badge/version-8.146.0-blue)
   ![Stack](https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20Rust%20%2B%20Vue%203-purple)
   ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-informational)
   ![Language](https://img.shields.io/badge/language-Rust%20%2B%20TypeScript-orange)
@@ -15,7 +15,7 @@
 
 NiTriTe est un outil Windows tout-en-un conçu pour les techniciens et utilisateurs avancés. **44 pages** organisées en **9 catégories**, dont un tableau de diagnostic regroupant **33 sous-onglets** d'analyse système — le tout via une interface native moderne construite avec Tauri v2 (backend Rust, frontend Vue 3).
 
-La 8.145.0 couvre le diagnostic matériel/logiciel complet, la réparation Windows (SFC/DISM/WinPE bootable), le clonage et la récupération de données (VSS), la gestion réseau et sécurité, l'automatisation via scripts et un assistant IA local (Ollama / llama.cpp portable), jusqu'au packaging d'une release portable autonome (exe + logiciels + drivers + scripts Windows).
+La 8.146.0 couvre le diagnostic matériel/logiciel complet, la réparation Windows (SFC/DISM/WinPE bootable), le clonage et la récupération de données (VSS), la gestion réseau et sécurité, l'automatisation via scripts et un assistant IA local (Ollama / llama.cpp portable), jusqu'au packaging d'une release portable autonome (exe + logiciels + drivers + scripts Windows).
 
 ---
 
@@ -143,10 +143,10 @@ Export des résultats en **TXT / HTML / MD / JSON**, score de santé global, cho
 Télécharger et exécuter le setup NSIS :
 
 ```
-Nitrite_8.145.0_x64-setup.exe
+Nitrite_8.146.0_x64-setup.exe
 ```
 
-Ou la release portable tout-en-un (`Nitrite_v8.145.0_full.exe`) : app + logiciels portables + drivers + scripts Windows, sans installation.
+Ou la release portable tout-en-un (`Nitrite_v8.146.0_full.exe`) : app + logiciels portables + drivers + scripts Windows, sans installation.
 
 ### Build depuis les sources
 
@@ -165,7 +165,7 @@ build.bat
 4. **ISO WinPE 11 bootable** — nécessite Windows ADK + WinPE Add-on
 
 L'exécutable généré : `src-tauri\target\release\nitrite.exe`
-L'installeur NSIS : `src-tauri\target\release\bundle\nsis\Nitrite_8.145.0_x64-setup.exe`
+L'installeur NSIS : `src-tauri\target\release\bundle\nsis\Nitrite_8.146.0_x64-setup.exe`
 
 ### Développement
 

@@ -21,6 +21,7 @@ const filterExt  = ref("");
 const deleting   = ref<string | null>(null);
 const confirmDelete = ref<string | null>(null);
 const trashMode  = ref(true);
+const hasScanned = ref(false);
 
 // Exclusions de dossiers
 const excludedFolders = ref<string[]>(["C:\\Windows", "C:\\$Recycle.Bin"]);
@@ -92,6 +93,7 @@ async function scan() {
     return;
   }
   loading.value = true;
+  hasScanned.value = true;
   files.value = [];
   confirmDelete.value = null;
   try {
@@ -292,6 +294,10 @@ function exportCsv() {
         </div>
       </div>
     </NCard>
+
+    <div v-if="!loading && hasScanned && files.length === 0" style="text-align:center;padding:40px;color:var(--text-muted)">
+      Aucun gros fichier trouvé pour ce chemin/ces critères.
+    </div>
 
     <div v-if="loading" style="display:flex;justify-content:center;padding:40px;gap:12px;align-items:center">
       <NSpinner :size="24" />

@@ -16,6 +16,7 @@ interface DuplicateGroup { hash: string; size_bytes: number; count: number; file
 
 const groups      = ref<DuplicateGroup[]>([]);
 const loading     = ref(false);
+const hasScanned  = ref(false);
 const deleting    = ref<Set<string>>(new Set());
 const scanPath    = ref("C:\\Users");
 const minSizeKb   = ref(100);
@@ -55,7 +56,7 @@ async function createRestorePoint() {
 }
 
 async function scan() {
-  loading.value = true; groups.value = []; confirmAll.value = false; displayCount.value = 20;
+  loading.value = true; hasScanned.value = true; groups.value = []; confirmAll.value = false; displayCount.value = 20;
   try {
     groups.value = await invokeRaw<DuplicateGroup[]>("find_duplicates", {
       path: scanPath.value,
@@ -255,6 +256,10 @@ async function openFile(path: string) {
         </NButton>
       </div>
     </template>
+
+    <div v-if="!loading && hasScanned && groups.length === 0" style="text-align:center;padding:40px;color:var(--text-muted)">
+      Aucun doublon trouvé pour ce chemin/ces critères.
+    </div>
   </div>
 </template>
 
