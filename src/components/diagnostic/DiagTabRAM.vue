@@ -104,6 +104,6 @@ async function openCpuZ() {
         </div>
       </NCollapse>
     </template>
-    <div v-else class="diag-loading"><div class="diag-spinner"></div> Informations RAM non disponibles...</div>
+    <div v-else class="diag-empty">Informations RAM non disponibles</div>
   </div>
 </template>

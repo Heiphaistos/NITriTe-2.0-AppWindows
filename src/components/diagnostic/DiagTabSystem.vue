@@ -98,7 +98,7 @@ const props = defineProps<{
           </NCollapse>
         </template>
       </template>
-      <div v-else class="diag-loading"><div class="diag-spinner"></div> Chargement des informations système...</div>
+      <div v-else class="diag-empty">Informations système non disponibles</div>
     </div>
   </template>
 
@@ -167,7 +167,11 @@ const props = defineProps<{
           </NCollapse>
         </template>
 
-        <div v-if="!biosExtended" class="diag-loading" style="margin-top:8px"><div class="diag-spinner"></div> Chargement des infos BIOS étendues...</div>
+        <!-- biosExtended est résolu dans le même Promise.all que biosInfo côté
+             DiagnosticPage.vue (avec repli .catch(() => null)) : si biosInfo est
+             déjà présent ici, biosExtended a déjà fini de se résoudre — null à ce
+             stade est définitif, pas un chargement encore en cours. -->
+        <div v-if="!biosExtended" class="diag-empty" style="margin-top:8px">Informations BIOS étendues non disponibles</div>
 
         <NCollapse title="Informations complémentaires" storageKey="diag-bios-info" :defaultOpen="false">
           <div class="info-grid">
@@ -190,7 +194,7 @@ const props = defineProps<{
           </div>
         </NCollapse>
       </template>
-      <div v-else class="diag-loading"><div class="diag-spinner"></div> Informations BIOS non disponibles...</div>
+      <div v-else class="diag-empty">Informations BIOS non disponibles</div>
     </div>
   </template>
 
@@ -257,7 +261,9 @@ const props = defineProps<{
             </div>
           </NCollapse>
         </template>
-        <div v-if="!moboExtended" class="diag-loading" style="margin-top:8px"><div class="diag-spinner"></div> Chargement des infos étendues...</div>
+        <!-- moboExtended est résolu dans le même Promise.all que moboInfo côté
+             DiagnosticPage.vue : même raisonnement que biosExtended ci-dessus. -->
+        <div v-if="!moboExtended" class="diag-empty" style="margin-top:8px">Informations étendues non disponibles</div>
 
         <NCollapse title="À propos de cette carte mère" storageKey="diag-mobo-about" :defaultOpen="false">
           <div class="info-grid" style="margin-bottom:10px">
@@ -282,7 +288,7 @@ const props = defineProps<{
           </div>
         </NCollapse>
       </template>
-      <div v-else class="diag-loading"><div class="diag-spinner"></div> Informations carte mère non disponibles (droits admin requis)...</div>
+      <div v-else class="diag-empty">Informations carte mère non disponibles (droits admin requis)</div>
     </div>
   </template>
 </template>

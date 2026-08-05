@@ -152,6 +152,6 @@ const cpuScore = computed(() => {
         </div>
       </div>
     </template>
-    <div v-else class="diag-loading"><div class="diag-spinner"></div> Informations CPU non disponibles...</div>
+    <div v-else class="diag-empty">Informations CPU non disponibles</div>
   </div>
 </template>
