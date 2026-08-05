@@ -71,13 +71,25 @@ fn run_cmd(args: &[&str]) -> bool {
 }
 
 pub fn disable_telemetry() -> Result<DebloatResult, NiTriTeError> {
+    // Set-Service ... -EA SilentlyContinue avalait un vrai échec (droits admin
+    // manquants) sans jamais le refléter : le message annonçait "Telemetrie
+    // desactivee" même quand aucun des 2 services n'avait réellement été
+    // désactivé. Reproduit en direct avec un nom de service inexistant (même
+    // échec réel qu'un accès refusé) : Set-Service échoue silencieusement,
+    // le script continue, exit 0. La clé de registre AllowTelemetry (vérifiée
+    // via le shim reg qui lève une exception sur échec) reste le contrôle
+    // faisant autorité, donc pas d'échec bloquant si les services échouent —
+    // mais le message doit refléter honnêtement leur vrai statut.
     let script = r#"
-        Stop-Service DiagTrack -Force -ErrorAction SilentlyContinue
-        Set-Service DiagTrack -StartupType Disabled -ErrorAction SilentlyContinue
-        Stop-Service dmwappushsvc -Force -ErrorAction SilentlyContinue
-        Set-Service dmwappushsvc -StartupType Disabled -ErrorAction SilentlyContinue
+        $services = @('DiagTrack','dmwappushsvc')
+        $n = 0
+        foreach ($s in $services) {
+            Stop-Service $s -Force -ErrorAction SilentlyContinue
+            try { Set-Service $s -StartupType Disabled -ErrorAction Stop; $n++ } catch {}
+        }
         reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" /v AllowTelemetry /t REG_DWORD /d 0 /f
-        Write-Output "Telemetrie desactivee"
+        if ($n -eq $services.Count) { Write-Output "Telemetrie desactivee (cle de registre + $n/$($services.Count) services)" }
+        else { Write-Output "Telemetrie desactivee par cle de registre - $n/$($services.Count) service(s) seulement (droits administrateur requis pour les services)" }
     "#;
     Ok(run_ps(script))
 }
@@ -270,11 +282,17 @@ pub fn run_extra_action(action: &str) -> DebloatResult {
             reg add "HKLM\SOFTWARE\Policies\Microsoft\WindowsInkWorkspace" /v AllowWindowsInkWorkspace /t REG_DWORD /d 0 /f
             Write-Output "Espace de travail Windows Ink desactive"
         "#),
+        // Même bug que disable_telemetry (Set-Service -EA SilentlyContinue non
+        // vérifié) : la clé de registre DisableLocation fait autorité (shim reg
+        // vérifié), le service lfsvc reste best-effort mais son vrai statut est
+        // maintenant reflété dans le message plutôt que masqué.
         "disable_location" => run_ps(r#"
             reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors" /v DisableLocation /t REG_DWORD /d 1 /f
             Stop-Service lfsvc -Force -ErrorAction SilentlyContinue
-            Set-Service lfsvc -StartupType Disabled -ErrorAction SilentlyContinue
-            Write-Output "Service de localisation desactive"
+            $svcOk = $false
+            try { Set-Service lfsvc -StartupType Disabled -ErrorAction Stop; $svcOk = $true } catch {}
+            if ($svcOk) { Write-Output "Service de localisation desactive" }
+            else { Write-Output "Localisation desactivee par cle de registre - service lfsvc non modifie (droits administrateur requis ?)" }
         "#),
         "disable_feedback" => run_ps(r#"
             reg add "HKCU\SOFTWARE\Microsoft\Siuf\Rules" /v NumberOfSIUFInPeriod /t REG_DWORD /d 0 /f
@@ -400,11 +418,15 @@ public class MemUtil { [DllImport("psapi.dll")] public static extern int EmptyWo
             Set-Service WSearch -StartupType Disabled
             Write-Output "Indexation Windows Search desactivee"
         "#),
+        // Même bug que disable_telemetry/disable_location (Set-Service -EA
+        // SilentlyContinue non vérifié).
         "disable_error_reporting" => run_ps(r#"
             reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" /v Disabled /t REG_DWORD /d 1 /f
             Stop-Service WerSvc -Force -ErrorAction SilentlyContinue
-            Set-Service WerSvc -StartupType Disabled -ErrorAction SilentlyContinue
-            Write-Output "Rapport d'erreurs desactive"
+            $svcOk = $false
+            try { Set-Service WerSvc -StartupType Disabled -ErrorAction Stop; $svcOk = $true } catch {}
+            if ($svcOk) { Write-Output "Rapport d'erreurs desactive" }
+            else { Write-Output "Rapport d'erreurs desactive par cle de registre - service WerSvc non modifie (droits administrateur requis ?)" }
         "#),
         "boost_foreground" => run_ps(r#"
             reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 38 /f
