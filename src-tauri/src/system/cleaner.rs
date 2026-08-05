@@ -254,27 +254,33 @@ fn quarantine_target_blocking(target_name: String) -> CleanResult {
         _ => return CleanResult { target: target_name, success: false, message: "Quarantaine non supportée pour cette cible".to_string(), ..Default::default() },
     };
     let safe_name = target_name.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_");
+    // Même bug/fix que clean_target_blocking (voir son commentaire) : $b/$c
+    // étaient incrémentés AVANT même de tenter Move-Item, et son échec était
+    // avalé (-EA SilentlyContinue + catch vide) sans jamais faire échouer le
+    // rapport — ok=$true était codé en dur. Un fichier verrouillé/refusé
+    // n'était donc jamais réellement mis en quarantaine tout en étant compté
+    // comme si c'était le cas.
     let ps = format!(r#"
 $src = {src}
 $qDir = "$env:LOCALAPPDATA\NiTriTe\quarantine\{name}"
 New-Item -ItemType Directory -Force -Path $qDir | Out-Null
-$b=0; $c=0
+$b=0; $c=0; $errs=0
 if (Test-Path $src) {{
     @(Get-ChildItem $src -Recurse -File -EA SilentlyContinue) | ForEach-Object {{
-        $b += $_.Length; $c++
         $dst = Join-Path $qDir $_.Name
-        try {{ Move-Item $_.FullName -Destination $dst -Force -EA SilentlyContinue }} catch {{}}
+        try {{ Move-Item $_.FullName -Destination $dst -Force -EA Stop; $b += $_.Length; $c++ }} catch {{ $errs++ }}
     }}
 }}
-@{{freed=[math]::Round($b/1MB,2);count=$c;ok=$true}} | ConvertTo-Json -Compress
+@{{freed=[math]::Round($b/1MB,2);count=$c;ok=($errs -eq 0)}} | ConvertTo-Json -Compress
 "#, src = src_ps, name = safe_name);
     if let Some(v) = ps_run(&ps) {
+        let ok = v["ok"].as_bool().unwrap_or(false);
         return CleanResult {
             target: target_name,
             freed_mb: v["freed"].as_f64().unwrap_or(0.0),
             files_deleted: v["count"].as_u64().unwrap_or(0) as u32,
-            success: v["ok"].as_bool().unwrap_or(false),
-            message: "Mis en quarantaine".to_string(),
+            success: ok,
+            message: if ok { "Mis en quarantaine".to_string() } else { "Mis en quarantaine (certains fichiers verrouillés ignorés)".to_string() },
         };
     }
     CleanResult { target: target_name, success: false, message: "Erreur quarantaine".to_string(), ..Default::default() }
