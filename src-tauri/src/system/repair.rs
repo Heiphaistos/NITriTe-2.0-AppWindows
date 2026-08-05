@@ -139,11 +139,27 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
         "bcdedit_check"   => Some(("BCDEdit (lecture)",             "bcdedit /enum all".to_string())),
 
         // Mise à jour & Sécurité
+        // Ancienne version : `ren ... & ren ... & net start ...` en cmd.exe.
+        // `&` n'interrompt jamais la chaîne sur un échec, et le code de sortie
+        // final ne reflète que le DERNIER `net start` — un `ren` qui échoue
+        // (dossier verrouillé car les services pas encore complètement
+        // arrêtés, ou "SoftwareDistribution.old" déjà présent d'une tentative
+        // précédente) était donc invisible : le repair rapportait toujours
+        // succès même quand rien n'avait été renommé (donc rien réparé).
+        // Vérifié en direct : Rename-Item sur un dossier avec un fichier
+        // verrouillé échoue bien et est interceptable via try/catch. Les
+        // services sont toujours redémarrés (jamais laissés arrêtés), mais
+        // le code de sortie final reflète maintenant si les renommages ont
+        // réellement réussi.
         "windows_update_reset" => Some(("Reset Windows Update", concat!(
-            "net stop wuauserv & net stop cryptSvc & net stop bits & net stop msiserver & ",
-            "ren C:\\Windows\\SoftwareDistribution SoftwareDistribution.old & ",
-            "ren C:\\Windows\\System32\\catroot2 catroot2.old & ",
-            "net start wuauserv & net start cryptSvc & net start bits & net start msiserver"
+            "powershell -Command \"",
+            "net stop wuauserv; net stop cryptSvc; net stop bits; net stop msiserver; ",
+            "$sd='C:\\Windows\\SoftwareDistribution'; $cr='C:\\Windows\\System32\\catroot2'; ",
+            "$ok1=$true; $ok2=$true; ",
+            "if (Test-Path $sd) { try { Rename-Item $sd 'SoftwareDistribution.old' -Force -ErrorAction Stop } catch { $ok1=$false } }; ",
+            "if (Test-Path $cr) { try { Rename-Item $cr 'catroot2.old' -Force -ErrorAction Stop } catch { $ok2=$false } }; ",
+            "net start wuauserv; net start cryptSvc; net start bits; net start msiserver; ",
+            "if ($ok1 -and $ok2) { exit 0 } else { exit 1 }\""
         ).to_string())),
         "defender_update" => Some(("Màj Defender",                  "powershell -Command Update-MpSignature".to_string())),
         "defender_scan"   => Some(("Scan rapide Defender",          "powershell -Command Start-MpScan -ScanType QuickScan".to_string())),
