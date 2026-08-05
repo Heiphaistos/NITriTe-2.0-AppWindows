@@ -162,8 +162,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { invoke, invokeRaw } from "@/utils/invoke";
+import { invoke, invokeRaw, isTauriContext } from "@/utils/invoke";
+import { useNotificationStore } from "@/stores/notifications";
 import { Activity, Play, Cpu, RefreshCw, TrendingUp, Clock, HardDrive as MemoryStick, List as Table } from 'lucide-vue-next'
+
+const notify = useNotificationStore();
 
 interface PerfPoint {
   timestamp: string; cpu_percent: number; ram_used_mb: number; ram_total_mb: number
@@ -187,12 +190,14 @@ const maxRam = computed(() => {
 async function runHistory() {
   loading.value = true; history.value = null; progressPts.value = 0
   try { history.value = await invokeRaw<PerfHistory>('get_perf_history', { samples: samples.value, intervalSecs: interval.value }) }
+  catch (e: unknown) { if (isTauriContext()) notify.error("Historique performances", (e instanceof Error ? e.message : String(e)).slice(0, 120)); }
   finally { loading.value = false }
 }
 
 async function loadTop() {
   topLoading.value = true
   try { topProcs.value = await invoke<TopProcess[]>('get_top_processes_by_cpu', { limit: 20 }) }
+  catch (e: unknown) { if (isTauriContext()) notify.error("Top processus", (e instanceof Error ? e.message : String(e)).slice(0, 120)); }
   finally { topLoading.value = false }
 }
 
