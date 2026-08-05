@@ -124,17 +124,20 @@ const filteredOpenPorts = () => openPorts.value.filter(p=>!openPortFilter.value|
       <div class="diag-section">
         <p class="diag-section-label" style="margin:0 0 8px 0"><Wifi :size="13" style="display:inline;margin-right:4px" />Configuration IP</p>
         <div v-if="ipLoading" class="diag-loading"><div class="diag-spinner"></div> Chargement...</div>
-        <div v-for="(a, i) in ipConfig" :key="i" style="padding:8px 0;border-bottom:1px solid var(--border)">
-          <div style="font-weight:600;font-size:12px;margin-bottom:4px">{{ a.name }}</div>
-          <div class="info-grid">
-            <div class="info-row"><span>IPv4</span><code>{{ a.ipv4||'—' }}{{ a.prefix_len?'/'+a.prefix_len:'' }}</code></div>
-            <div class="info-row" v-if="a.ipv6"><span>IPv6</span><code style="font-size:10px">{{ a.ipv6 }}</code></div>
-            <div class="info-row"><span>Passerelle</span><code>{{ a.gateway||'—' }}</code></div>
-            <div class="info-row"><span>DNS</span><code>{{ a.dns_servers.join(', ')||'—' }}</code></div>
-            <div class="info-row"><span>MAC</span><code>{{ a.mac||'—' }}</code></div>
-            <div class="info-row"><span>DHCP</span><NBadge :variant="a.dhcp_enabled?'success':'neutral'" style="font-size:9px">{{ a.dhcp_enabled?'Activé':'Statique' }}</NBadge></div>
+        <div v-else-if="ipConfig.length">
+          <div v-for="(a, i) in ipConfig" :key="i" style="padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="font-weight:600;font-size:12px;margin-bottom:4px">{{ a.name }}</div>
+            <div class="info-grid">
+              <div class="info-row"><span>IPv4</span><code>{{ a.ipv4||'—' }}{{ a.prefix_len?'/'+a.prefix_len:'' }}</code></div>
+              <div class="info-row" v-if="a.ipv6"><span>IPv6</span><code style="font-size:10px">{{ a.ipv6 }}</code></div>
+              <div class="info-row"><span>Passerelle</span><code>{{ a.gateway||'—' }}</code></div>
+              <div class="info-row"><span>DNS</span><code>{{ a.dns_servers.join(', ')||'—' }}</code></div>
+              <div class="info-row"><span>MAC</span><code>{{ a.mac||'—' }}</code></div>
+              <div class="info-row"><span>DHCP</span><NBadge :variant="a.dhcp_enabled?'success':'neutral'" style="font-size:9px">{{ a.dhcp_enabled?'Activé':'Statique' }}</NBadge></div>
+            </div>
           </div>
         </div>
+        <p v-else style="font-size:12px;color:var(--text-secondary)">Aucun adaptateur réseau détecté.</p>
       </div>
 
       <!-- WiFi réseaux proches -->
