@@ -172,13 +172,28 @@ pub fn clear_event_logs() -> Result<DebloatResult, NiTriTeError> {
 }
 
 pub fn clear_windowsupdate_cache() -> Result<DebloatResult, NiTriTeError> {
+    // Start-Service ... -EA SilentlyContinue non vérifié (repéré cycle 112, même
+    // famille que disable_telemetry/disable_location/disable_error_reporting) :
+    // un échec de redémarrage laissait wuauserv/bits ARRÊTÉS (Windows Update
+    // complètement cassé) sans jamais le signaler — "Cache Windows Update vide"
+    // affiché même dans ce cas. Vérifié en direct avec un nom de service
+    // inexistant (même échec réel qu'un service qui refuse de redémarrer) :
+    // Start-Service échoue silencieusement, message de succès affiché quand même.
     let script = r#"
         Stop-Service wuauserv -Force
         Stop-Service bits -Force
         Remove-Item "$env:SystemRoot\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
         Start-Service wuauserv -ErrorAction SilentlyContinue
         Start-Service bits -ErrorAction SilentlyContinue
-        Write-Output "Cache Windows Update vide"
+        $wuOk = (Get-Service wuauserv -ErrorAction SilentlyContinue).Status -eq 'Running'
+        $bitsOk = (Get-Service bits -ErrorAction SilentlyContinue).Status -eq 'Running'
+        if ($wuOk -and $bitsOk) { Write-Output "Cache Windows Update vide" }
+        else {
+            $failed = @()
+            if (-not $wuOk) { $failed += 'wuauserv' }
+            if (-not $bitsOk) { $failed += 'bits' }
+            Write-Output "Cache Windows Update vide - ATTENTION : service(s) non redemarre(s) : $($failed -join ', ') (Windows Update peut etre indisponible, redemarrez le PC)"
+        }
     "#;
     Ok(run_ps(script))
 }
