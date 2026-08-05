@@ -188,10 +188,23 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
         "clear_prefetch"  => Some(("Vider Prefetch",                "del /F /Q C:\\Windows\\Prefetch\\*.pf".to_string())),
 
         // Services
+        // Ancienne version : `net stop & del /F /Q & net start` en cmd.exe.
+        // `&` ignore les codes de sortie entre commandes — un `del` qui
+        // échoue (fichier verrouillé car le spouleur pas complètement
+        // arrêté) était invisible, `net start` réussissant ensuite masquait
+        // totalement l'échec. Vérifié en direct (repro fidèle : del /F /Q
+        // sur un fichier verrouillé & echo réussi ensuite) : code de sortie
+        // global 0 alors que le fichier existe toujours. Corrigé en
+        // vérifiant qu'il ne reste plus aucun fichier dans le dossier après
+        // la tentative de suppression.
         "print_spooler"   => Some(("Reset Spouleur impression", concat!(
-            "net stop spooler & ",
-            "del /F /Q C:\\Windows\\System32\\spool\\PRINTERS\\* & ",
-            "net start spooler"
+            "powershell -Command \"",
+            "net stop spooler; ",
+            "$d='C:\\Windows\\System32\\spool\\PRINTERS'; ",
+            "Get-ChildItem $d -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; ",
+            "$remaining=@(Get-ChildItem $d -File -ErrorAction SilentlyContinue).Count; ",
+            "net start spooler; ",
+            "if ($remaining -eq 0) { exit 0 } else { exit 1 }\""
         ).to_string())),
         // Le code de sortie de "cmd /C powershell -Command ..." reflète
         // uniquement le DERNIER statement exécuté (`net start WSearch`) — un
