@@ -308,17 +308,33 @@ fn get_browser_cache_info_blocking() -> Result<Vec<BrowserCacheInfo>, String> {
     let script = r#"
 $localApp = [Environment]::GetFolderPath('LocalApplicationData')
 $roaming   = [Environment]::GetFolderPath('ApplicationData')
+# Firefox : le dossier "$roaming\Mozilla\Firefox\Profiles" est le PROFIL
+# complet (favoris places.sqlite, mots de passe logins.json/key4.db,
+# cookies, extensions...), PAS le cache — seul le sous-dossier "cache2" de
+# chaque profil (stocké sous LocalAppData, pas Roaming) est du cache
+# régénérable. Vider "Profiles" via clean_browser_cache_path effacerait
+# tout le profil Firefox. Repli sur le 1er profil trouvé (mêmes hypothèses
+# que maintenance/browser_cleanup.rs::get_browser_cache_sizes, déjà correct).
+$ffCache = ''
+$ffProfilesLocal = "$localApp\Mozilla\Firefox\Profiles"
+if (Test-Path $ffProfilesLocal) {
+    $ffProf = Get-ChildItem $ffProfilesLocal -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($ffProf) { $ffCache = Join-Path $ffProf.FullName 'cache2' }
+}
 $caches = @(
     @{ browser='Google Chrome';    path="$localApp\Google\Chrome\User Data\Default\Cache" },
     @{ browser='Microsoft Edge';   path="$localApp\Microsoft\Edge\User Data\Default\Cache" },
-    @{ browser='Firefox';          path="$roaming\Mozilla\Firefox\Profiles" },
+    @{ browser='Firefox';          path=$ffCache },
     @{ browser='Opera';            path="$roaming\Opera Software\Opera Stable\Cache" },
     @{ browser='Brave';            path="$localApp\BraveSoftware\Brave-Browser\User Data\Default\Cache" },
     @{ browser='Vivaldi';          path="$localApp\Vivaldi\User Data\Default\Cache" }
 )
 $result = $caches | ForEach-Object {
     $p = $_.path
-    $exists = Test-Path $p
+    # Test-Path lève une erreur non-terminante sur une chaine vide ($ffCache
+    # quand Firefox/aucun profil n'est trouve) SANS reinitialiser $exists,
+    # qui garde alors la valeur du navigateur precedent dans la boucle.
+    $exists = if ([string]::IsNullOrEmpty($p)) { $false } else { Test-Path $p }
     $size = 0.0
     if ($exists) {
         $size = [math]::Round((Get-ChildItem $p -Recurse -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB, 2)
@@ -346,9 +362,51 @@ pub async fn clean_browser_cache_path(browser_path: String) -> Result<f64, Strin
         .map_err(|e| e.to_string())?
 }
 
+/// Vérifie que le chemin correspond à un dossier de cache navigateur connu
+/// (mêmes emplacements que get_browser_cache_info_blocking). Ce garde-fou
+/// est nécessaire car clean_browser_cache_path est une commande Tauri
+/// invocable directement — le check `..` seul ne bloque qu'une traversée
+/// relative, pas un chemin absolu arbitraire (ex. "C:\Users\X\Documents"),
+/// et clean_browser_cache_path_blocking exécute un `Remove-Item -Recurse
+/// -Force` sur TOUT le contenu du dossier fourni. Le frontend actuel
+/// (DiagTabCleaner.vue) ne propose que les chemins de get_browser_cache_info,
+/// mais le backend est la vraie frontière de confiance, pas l'UI.
+fn is_known_browser_cache_path(canonical: &std::path::Path) -> bool {
+    let raw = canonical.to_string_lossy().to_lowercase().replace('/', "\\");
+    let path_lower = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_default().to_lowercase();
+    let roaming = std::env::var("APPDATA").unwrap_or_default().to_lowercase();
+    if local.is_empty() {
+        return false;
+    }
+    let fixed = [
+        format!(r"{}\google\chrome\user data\default\cache", local),
+        format!(r"{}\microsoft\edge\user data\default\cache", local),
+        format!(r"{}\bravesoftware\brave-browser\user data\default\cache", local),
+        format!(r"{}\vivaldi\user data\default\cache", local),
+        format!(r"{}\opera software\opera stable\cache", roaming),
+    ];
+    if fixed.iter().any(|k| path_lower == k.as_str()) {
+        return true;
+    }
+    // Firefox : "<local>\Mozilla\Firefox\Profiles\<profil>\cache2" — le nom
+    // de profil varie, donc on vérifie le préfixe + suffixe plutôt qu'une
+    // égalité exacte.
+    let ff_prefix = format!(r"{}\mozilla\firefox\profiles\", local);
+    path_lower.starts_with(&ff_prefix) && path_lower.ends_with(r"\cache2")
+}
+
 fn clean_browser_cache_path_blocking(browser_path: String) -> Result<f64, String> {
     if browser_path.is_empty() || browser_path.contains("..") {
         return Err("Chemin invalide".to_string());
+    }
+    // Canonicalize + whitelist : voir is_known_browser_cache_path. Sans ce
+    // garde, un chemin absolu arbitraire (pas besoin de "..") pouvait faire
+    // vider n'importe quel dossier via Remove-Item -Recurse -Force.
+    let canonical = std::fs::canonicalize(&browser_path)
+        .map_err(|e| format!("Chemin inaccessible {}: {}", browser_path, e))?;
+    if !is_known_browser_cache_path(&canonical) {
+        return Err(format!("Chemin non reconnu comme cache navigateur: {}", canonical.display()));
     }
     let safe = browser_path.replace('\'', "''");
     let script = format!(r#"
@@ -422,5 +480,41 @@ mod tests {
         // La comparaison doit être insensible à la casse
         assert!(is_system_path_blocked(Path::new(r"c:\WINDOWS\system32\notepad.exe")));
         assert!(is_system_path_blocked(Path::new(r"C:\windows\SYSTEM32\notepad.exe")));
+    }
+
+    // ── is_known_browser_cache_path ───────────────────────────────────────────
+
+    #[test]
+    fn known_chrome_cache_path_allowed() {
+        let local = std::env::var("LOCALAPPDATA").unwrap();
+        let p = format!(r"{}\Google\Chrome\User Data\Default\Cache", local);
+        assert!(is_known_browser_cache_path(Path::new(&p)));
+    }
+
+    #[test]
+    fn known_firefox_profile_cache2_allowed() {
+        let local = std::env::var("LOCALAPPDATA").unwrap();
+        let p = format!(r"{}\Mozilla\Firefox\Profiles\abc123.default-release\cache2", local);
+        assert!(is_known_browser_cache_path(Path::new(&p)));
+    }
+
+    #[test]
+    fn firefox_profile_root_not_cache2_is_blocked() {
+        // Le dossier profil racine (pas son sous-dossier cache2) contient
+        // places.sqlite/logins.json/etc — ne doit PAS être reconnu comme
+        // cache. C'est exactement le bug corrigé dans
+        // get_browser_cache_info_blocking (pointait sur "Profiles" entier).
+        let local = std::env::var("LOCALAPPDATA").unwrap();
+        let p = format!(r"{}\Mozilla\Firefox\Profiles\abc123.default-release", local);
+        assert!(!is_known_browser_cache_path(Path::new(&p)));
+        let profiles_root = format!(r"{}\Mozilla\Firefox\Profiles", local);
+        assert!(!is_known_browser_cache_path(Path::new(&profiles_root)));
+    }
+
+    #[test]
+    fn arbitrary_user_folder_is_blocked() {
+        assert!(!is_known_browser_cache_path(Path::new(r"C:\Users\Momo\Documents")));
+        assert!(!is_known_browser_cache_path(Path::new(r"C:\Windows")));
+        assert!(!is_known_browser_cache_path(Path::new(r"C:\Users\Momo\Desktop")));
     }
 }
