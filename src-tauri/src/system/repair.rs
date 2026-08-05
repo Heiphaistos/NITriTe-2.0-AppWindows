@@ -295,11 +295,25 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
 
         // Cache & Nettoyage supplémentaires
         "dns_cache_flush"  => Some(("Vider cache DNS (PS)",        "powershell -Command Clear-DnsClientCache".to_string())),
+        // Même famille que print_spooler/icon_cache : `net stop & del & del &
+        // net start` en cmd.exe masquait tout échec de suppression (dossier
+        // FontCache verrouillé juste après l'arrêt du service) derrière le
+        // `net start FontCache` final. Vérifié en direct avec le même repro
+        // (fichier verrouillé + del /F /Q + commande suivante réussie) :
+        // exit 0 alors qu'un fichier restait. FontCache3.0.0.0 (arrêté mais
+        // jamais redémarré dans l'ancienne version) n'existe plus sur
+        // Windows 10/11 (vérifié en direct, Get-Service échoue — service
+        // legacy Windows 7/8) : laissé tel quel, sans effet sur ce parc.
         "font_cache"       => Some(("Reconstruire cache polices", concat!(
-            "net stop FontCache & net stop FontCache3.0.0.0 & ",
-            "del /F /Q \"%WinDir%\\ServiceProfiles\\LocalService\\AppData\\Local\\FontCache\\*\" & ",
-            "del /F /Q \"%WinDir%\\ServiceProfiles\\LocalService\\AppData\\Local\\FontCache-System\\*\" & ",
-            "net start FontCache"
+            "powershell -Command \"",
+            "net stop FontCache; net stop FontCache3.0.0.0; ",
+            "$d1=$env:WinDir+'\\ServiceProfiles\\LocalService\\AppData\\Local\\FontCache'; ",
+            "$d2=$env:WinDir+'\\ServiceProfiles\\LocalService\\AppData\\Local\\FontCache-System'; ",
+            "Get-ChildItem $d1 -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; ",
+            "Get-ChildItem $d2 -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; ",
+            "$remaining=@(Get-ChildItem $d1 -File -ErrorAction SilentlyContinue).Count + @(Get-ChildItem $d2 -File -ErrorAction SilentlyContinue).Count; ",
+            "net start FontCache; ",
+            "if ($remaining -eq 0) { exit 0 } else { exit 1 }\""
         ).to_string())),
         "store_cache"      => Some(("Réparer Windows Store", concat!(
             "wsreset.exe & ",
