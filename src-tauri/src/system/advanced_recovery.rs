@@ -133,7 +133,17 @@ pub fn create_disk_image(
         let global_start = Instant::now();
         let mut last_emit = Instant::now();
 
-        loop {
+        // Borne sur total_bytes (connu à l'avance) : sans elle, la seule sortie
+        // de boucle est `Ok(0)` renvoyé par `src.read()`. Sur un disque
+        // physiquement en train de mourir — exactement le cas d'usage de cet
+        // outil d'imagerie — rien ne garantit qu'un `read()` qui échoue en
+        // continu à la même position finisse un jour par renvoyer `Ok(0)`
+        // plutôt que de relancer indéfiniment la même erreur ; `bytes_done`
+        // avance de CHUNK à chaque itération même en échec, donc borner sur
+        // total_bytes garantit la terminaison. Même classe de bug que le mode
+        // sécurisé de disk_recovery.rs (cycle 67), en pire ici : une image
+        // disque complète peut représenter des téraoctets.
+        while bytes_done < total_bytes {
             match src.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
