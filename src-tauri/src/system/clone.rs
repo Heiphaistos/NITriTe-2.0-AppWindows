@@ -341,11 +341,17 @@ pub fn clone_with_robocopy(
     let dst = format!("{}:\\", target_drive.trim_end_matches([':', '\\']));
 
     // ── Vérifications de sécurité ───────────────────────────────
-    if dst.to_uppercase().starts_with("C:") {
+    // Windows n'est pas toujours installé sur C: (installs personnalisés,
+    // systèmes multi-boot, certaines configurations OEM) — comparer à la
+    // vraie lettre système (%SystemDrive%), jamais à "C:" en dur, sous peine
+    // de laisser passer un robocopy qui écrase le Windows en cours d'exécution
+    // sur une machine où celui-ci n'est pas sur C:.
+    let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
+    if is_system_drive(&dst, &system_drive) {
         return CloneResult {
             success: false,
             method: "Robocopy".into(),
-            message: "Destination C:\\ interdite — écrasement du système Windows impossible.".into(),
+            message: format!("Destination {} interdite — écrasement du système Windows impossible.", system_drive),
             duration_secs: 0,
         };
     }
@@ -459,6 +465,15 @@ pub fn clone_with_robocopy(
     }
 }
 
+/// Vérifie que `dst` ne pointe pas vers le lecteur système (celui contenant
+/// Windows) — écraser ce lecteur via robocopy corromprait l'installation en
+/// cours d'exécution.
+fn is_system_drive(dst: &str, system_drive: &str) -> bool {
+    let dst_letter = dst.trim_end_matches(['\\', '/']).to_uppercase();
+    let sys_letter = system_drive.trim_end_matches(['\\', '/']).to_uppercase();
+    !sys_letter.is_empty() && dst_letter.starts_with(&sys_letter)
+}
+
 /// Traduit les codes de sortie Robocopy en message clair
 fn robocopy_message(code: i32, src: &str, dst: &str) -> String {
     let detail = match code {
@@ -532,6 +547,33 @@ mod tests {
         // Sortie FR : "copié (25 %)" avec espace avant le %
         assert_eq!(parse_wbadmin_pct("Création d'une sauvegarde du volume (C:), copié (25 %)."), Some(25));
         assert_eq!(parse_wbadmin_pct("copié (100 %)"), Some(100));
+    }
+
+    // ── is_system_drive ───────────────────────────────────────────────────────
+    // Régression : l'ancien check comparait dst à "C:" en dur, laissant passer
+    // un robocopy destructeur vers le lecteur système sur une machine où
+    // Windows n'est pas installé sur C: (installs personnalisés, multi-boot).
+
+    #[test]
+    fn system_drive_blocked_when_matches_env() {
+        assert!(is_system_drive("C:\\", "C:"));
+    }
+
+    #[test]
+    fn non_system_drive_allowed() {
+        assert!(!is_system_drive("D:\\", "C:"));
+    }
+
+    #[test]
+    fn custom_system_drive_letter_blocked() {
+        // Windows installé sur D: (pas C:) — la vraie faille corrigée ici.
+        assert!(is_system_drive("D:\\", "D:"));
+        assert!(!is_system_drive("C:\\", "D:"));
+    }
+
+    #[test]
+    fn case_insensitive_match() {
+        assert!(is_system_drive("c:\\", "C:"));
     }
 
     // ── robocopy_message ──────────────────────────────────────────────────────
