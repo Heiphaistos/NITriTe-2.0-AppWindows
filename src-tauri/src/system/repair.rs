@@ -320,11 +320,23 @@ fn repair_cmd_and_label(repair_type: &str) -> Option<(&'static str, String)> {
             "powershell -Command \"Remove-Item -Recurse -Force ",
             "$env:LocalAppData\\Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\LocalCache\\* -ErrorAction SilentlyContinue\""
         ).to_string())),
+        // Dernier de la même famille que print_spooler/icon_cache/
+        // font_cache/windows_update_reset/search_reindex (cycles 102-106) :
+        // le Remove-Item du milieu utilisait -EA SilentlyContinue et le
+        // Start-Service final réussissant ensuite masquait totalement un
+        // échec de suppression (dossier verrouillé juste après l'arrêt du
+        // service). Vérifié en direct avec le même repro multi-statement
+        // que search_reindex/windows_update_reset : exit 0 alors qu'un
+        // élément restait. Corrigé en vérifiant qu'il ne reste plus rien
+        // dans le dossier après la tentative de suppression.
         "delivery_opt"     => Some(("Vider Delivery Optimization", concat!(
             "powershell -Command \"",
             "Stop-Service -Name DoSvc -Force -ErrorAction SilentlyContinue; ",
-            "Remove-Item -Recurse -Force C:\\Windows\\SoftwareDistribution\\DeliveryOptimization\\* -ErrorAction SilentlyContinue; ",
-            "Start-Service -Name DoSvc -ErrorAction SilentlyContinue\""
+            "$d='C:\\Windows\\SoftwareDistribution\\DeliveryOptimization'; ",
+            "Get-ChildItem $d -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; ",
+            "$remaining=@(Get-ChildItem $d -ErrorAction SilentlyContinue).Count; ",
+            "Start-Service -Name DoSvc -ErrorAction SilentlyContinue; ",
+            "if ($remaining -eq 0) { exit 0 } else { exit 1 }\""
         ).to_string())),
 
         // Services & Processus
