@@ -307,28 +307,45 @@ try {
 }
 
 /// Restaurer un élément de la Corbeille
+///
+/// N'utilise PAS `$item.InvokeVerb('Restore')` : confirmé en exécution réelle
+/// (2026-08-05) que ce verbe COM ne fait RIEN quand il est invoqué depuis un
+/// powershell.exe non-interactif (exactement le contexte de `run_ps` ici) — le
+/// fichier reste dans la Corbeille, `InvokeVerb` ne renvoie aucune valeur
+/// permettant de le détecter, et l'ancien code écrivait 'OK' sans jamais
+/// vérifier — la fonctionnalité de restauration ne fonctionnait donc jamais.
+/// Restauration réelle via `Move-Item` vers le vrai chemin d'origine, obtenu
+/// via `System.Recycle.DeletedFrom` (même mécanisme `ExtendedProperty` déjà
+/// utilisé par `scan_recycle_bin` pour la date de suppression) — vérifié en
+/// direct : le fichier réapparaît bien à son emplacement d'origine.
 pub fn restore_recycle_bin_item(original_path: String) -> RestoreResult {
     let ps = format!(r#"
 try {{
     $shell = New-Object -ComObject Shell.Application
     $recycle = $shell.Namespace(0xA)
+    $target = $null
     foreach ($item in $recycle.Items()) {{
-        if ($item.Path -eq '{}') {{
-            $item.InvokeVerb('Restore')
-            Write-Output 'OK'
-            exit
-        }}
+        if ($item.Path -eq '{}') {{ $target = $item; break }}
     }}
-    Write-Output 'ERR:Élément introuvable dans la Corbeille'
+    if (-not $target) {{ Write-Output 'ERR:Élément introuvable dans la Corbeille'; exit }}
+    $deletedFrom = $target.ExtendedProperty("System.Recycle.DeletedFrom")
+    if (-not $deletedFrom) {{ Write-Output 'ERR:Emplacement d''origine introuvable'; exit }}
+    $trueOriginal = Join-Path $deletedFrom $target.Name
+    if (-not (Test-Path $deletedFrom)) {{ New-Item -ItemType Directory -Path $deletedFrom -Force | Out-Null }}
+    Move-Item -LiteralPath $target.Path -Destination $trueOriginal -Force -ErrorAction Stop
+    Write-Output "OK:$trueOriginal"
 }} catch {{ Write-Output "ERR:$($_.Exception.Message)" }}
 "#, original_path.replace('\'', "''"));
 
     match run_ps(&ps) {
-        Some(t) if t.trim() == "OK" => RestoreResult {
-            success: true,
-            message: "Fichier restauré à son emplacement d'origine".into(),
-            restored_path: original_path,
-        },
+        Some(t) if t.trim().starts_with("OK:") => {
+            let restored_path = t.trim()[3..].to_string();
+            RestoreResult {
+                success: true,
+                message: "Fichier restauré à son emplacement d'origine".into(),
+                restored_path,
+            }
+        }
         Some(t) => RestoreResult {
             success: false,
             message: t.trim().trim_start_matches("ERR:").to_string(),
