@@ -168,7 +168,7 @@ const newIp = ref(''); const newHost = ref(''); const newComment = ref('')
 
 function showMsg(t: string, err = false) { msg.value = t; msgErr.value = err; setTimeout(() => { msg.value = '' }, 3000) }
 
-async function loadEntries() { loading.value = true; try { entries.value = await invoke<HostsEntry[]>('get_hosts_entries') } finally { loading.value = false } }
+async function loadEntries() { loading.value = true; try { entries.value = await invoke<HostsEntry[]>('get_hosts_entries') } catch(e) { showMsg(String(e), true) } finally { loading.value = false } }
 async function addEntry() {
   try { showMsg(await invoke<string>('add_hosts_entry', { ip: newIp.value, hostname: newHost.value, comment: newComment.value })); newIp.value = ''; newHost.value = ''; newComment.value = ''; await loadEntries() }
   catch(e) { showMsg(String(e), true) }

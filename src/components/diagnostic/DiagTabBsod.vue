@@ -123,7 +123,10 @@ import { ref } from 'vue'
 import { invoke } from "@/utils/invoke";
 import { cachedInvoke } from '@/composables/useCachedInvoke'
 import { useExportData } from '@/composables/useExportData'
+import { useNotificationStore } from '@/stores/notifications'
 import { AlertTriangle, RefreshCw, Search, ChevronDown, BookOpen, Wrench, CheckCircle2 } from 'lucide-vue-next'
+
+const notify = useNotificationStore()
 
 const { exportTXT } = useExportData()
 
@@ -176,6 +179,7 @@ const descCache: Record<string, string> = {}
 async function load() {
   loading.value = true
   try { report.value = await cachedInvoke<BsodReport>('get_bsod_history') }
+  catch (e) { notify.error('Analyseur BSOD', String(e)) }
   finally { loading.value = false }
 }
 function getDescSync(code: string): string {

@@ -113,7 +113,7 @@ const msg = ref(''); const msgErr = ref(false)
 
 function showMsg(t: string, err = false) { msg.value = t; msgErr.value = err; setTimeout(() => { msg.value = '' }, 3000) }
 
-async function load() { loading.value = true; try { report.value = await cachedInvoke<BluetoothReport>('get_bluetooth_info') } finally { loading.value = false } }
+async function load() { loading.value = true; try { report.value = await cachedInvoke<BluetoothReport>('get_bluetooth_info') } catch (e) { showMsg(String(e), true) } finally { loading.value = false } }
 
 let btReloadTimer: ReturnType<typeof setTimeout> | null = null;
 async function toggleBt(enable: boolean) {

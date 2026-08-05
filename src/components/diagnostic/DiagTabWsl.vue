@@ -118,7 +118,7 @@ const loading = ref(false); const info = ref<WslInfo | null>(null)
 const selectedDistro = ref(''); const wslCmd = ref('')
 const cmdLoading = ref(false); const cmdOutput = ref(''); const versionMsg = ref('')
 
-async function load() { loading.value = true; try { info.value = await invoke<WslInfo>('get_wsl_info') } finally { loading.value = false } }
+async function load() { loading.value = true; try { info.value = await invoke<WslInfo>('get_wsl_info') } catch(e) { versionMsg.value = String(e) } finally { loading.value = false } }
 
 async function setVersion(v: number) {
   try {

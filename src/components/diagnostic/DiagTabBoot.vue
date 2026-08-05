@@ -115,6 +115,7 @@ function showMsg(t: string, err = false) { msg.value = t; msgErr.value = err; se
 async function load() {
   loading.value = true
   try { config.value = await invoke<BootConfig>('get_boot_config'); timeout.value = config.value.timeout_secs }
+  catch(e) { showMsg(String(e), true) }
   finally { loading.value = false }
 }
 async function saveTimeout() {

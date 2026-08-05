@@ -227,6 +227,7 @@ async function flush() {
 async function reload() {
   loading.value = true;
   try { adapters.value = await invoke<AdapterInfo[]>("get_network_adapters_for_dns"); }
+  catch (e: unknown) { notify.error("Erreur chargement", String(e)); }
   finally { loading.value = false; }
 }
 
