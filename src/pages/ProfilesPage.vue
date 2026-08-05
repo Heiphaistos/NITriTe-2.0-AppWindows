@@ -52,12 +52,19 @@ async function loadProfiles() {
 }
 
 async function createProfile() {
-  if (!newName.value.trim()) return;
+  const trimmedName = newName.value.trim();
+  if (!trimmedName) return;
+  // save_profile_cmd écrase silencieusement le fichier existant (profile_filename()
+  // est déterministe sur le nom, cf. utils/profiles.rs) — sans ce check, créer un
+  // profil avec un nom déjà utilisé efface l'ancien sans aucun avertissement.
+  if (profiles.value.some(p => p.name === trimmedName)) {
+    if (!(await confirm(`Un profil "${trimmedName}" existe déjà.\n\nLe remplacer ?`, { title: "Nitrite", kind: "warning" }))) return;
+  }
   creating.value = true;
   try {
     const cfg = await invoke<AppConfig>("get_config");
     const profile: Profile = {
-      name:       newName.value.trim(),
+      name:       trimmedName,
       description: newDesc.value.trim(),
       created_at: new Date().toISOString(),
       version:    __APP_VERSION__,
@@ -143,6 +150,9 @@ async function importProfile() {
     if (!path || Array.isArray(path)) return;
     const json = await readTextFile(path as string);
     const profile = await invoke<Profile>("import_profile_json", { json });
+    if (profiles.value.some(p => p.name === profile.name)) {
+      if (!(await confirm(`Un profil "${profile.name}" existe déjà.\n\nLe remplacer ?`, { title: "Nitrite", kind: "warning" }))) return;
+    }
     await invoke("save_profile_cmd", { profile });
     notify.success("Importé", `Profil "${profile.name}" importé`);
     await loadProfiles();

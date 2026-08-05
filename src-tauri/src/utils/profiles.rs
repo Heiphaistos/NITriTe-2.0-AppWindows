@@ -72,11 +72,6 @@ pub fn delete_profile(name: &str) -> Result<(), std::io::Error> {
     }
 }
 
-pub fn profile_exists(name: &str) -> bool {
-    let dir = profiles_dir();
-    dir.join(profile_filename(name)).exists()
-}
-
 pub fn export_profile_json(name: &str) -> Option<String> {
     let dir = profiles_dir();
     let path = dir.join(profile_filename(name));
