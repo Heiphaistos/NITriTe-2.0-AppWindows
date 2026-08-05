@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { invokeRaw as invoke } from "@/utils/invoke";
 import NButton from "@/components/ui/NButton.vue";
 import NSpinner from "@/components/ui/NSpinner.vue";
@@ -48,6 +49,18 @@ async function compare() {
 async function restoreFile(f: ComparedFile) {
   if (!f.shadow_path) return;
   const targetDir = livePath.value || "C:\\NiTriTe\\Restaurés";
+  // La restauration écrit avec -Force côté backend : pour un fichier "modifié",
+  // la cible par défaut (targetDir = livePath, le dossier live comparé) écrase
+  // silencieusement la version ACTUELLE par l'ancienne version du cliché, sans
+  // aucune sauvegarde préalable — contrairement à "supprimé" (recrée un fichier
+  // absent, rien à écraser) ce cas détruit réellement des données existantes.
+  if (f.status === "modified") {
+    const overwritesLive = targetDir === livePath.value;
+    const msg = overwritesLive
+      ? `Écraser la version actuelle de "${f.name}" par l'ancienne version du cliché ? La version actuelle sera perdue.`
+      : `Restaurer l'ancienne version de "${f.name}" dans "${targetDir}" ?`;
+    if (!(await confirm(msg, { title: "Nitrite", kind: "warning" }))) return;
+  }
   try {
     const r = await invoke<{ success: boolean; message: string; restored_path: string }>("restore_from_shadow", {
       sourcePath: f.shadow_path,
