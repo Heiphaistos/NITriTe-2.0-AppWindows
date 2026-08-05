@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
 import { CheckCircle, AlertTriangle, XCircle, ShieldCheck, ShieldOff, Shield, Key, RefreshCw, Zap, Download } from "lucide-vue-next";
 import NBadge from "@/components/ui/NBadge.vue";
@@ -47,6 +48,14 @@ function scoreVariant(pct: number): "success"|"warning"|"danger" {
 }
 
 async function toggleDefender(enable: boolean) {
+  // Contrairement à disableAllProfiles() dans DiagTabFirewall.vue (même
+  // catégorie d'action — désactiver une protection de sécurité de base), cette
+  // action n'avait aucune confirmation. Activer reste sans risque, seul le
+  // sens désactivation nécessite l'avertissement.
+  if (!enable && !(await confirm(
+    "Désactiver la protection temps réel Windows Defender ? Cela réduit la sécurité du système.",
+    { title: "Nitrite", kind: "warning" }
+  ))) return;
   togglingDefender.value = true;
   try {
     await invoke("toggle_defender_realtime", { enable });
