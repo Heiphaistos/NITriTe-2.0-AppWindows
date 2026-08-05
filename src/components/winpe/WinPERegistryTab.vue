@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
 import NButton from "@/components/ui/NButton.vue";
 import { Database, Shield, RefreshCw, CheckCircle, XCircle } from "lucide-vue-next";
@@ -21,6 +22,19 @@ const regKey = ref("");
 const regValue = ref("");
 const regData = ref("");
 const regType = ref("REG_SZ");
+
+async function runMaybeConfirmed(cmd: string, label: string, dangerous?: boolean) {
+  // "Restaurer hive depuis fichier" est le seul item de cette liste qui
+  // REMPLACE toute une ruche registre en direct (SYSTEM) depuis un fichier
+  // figé — les 15 autres sont des lectures (reg query) ou des éditions
+  // ciblées (une seule valeur ajoutée/supprimée), sans commune mesure de
+  // gravité. Un backup obsolète ou absent peut rendre Windows inutilisable.
+  if (dangerous && !(await confirm(
+    `⚠️ IRRÉVERSIBLE : ${label} — remplace la ruche registre en direct par le contenu du fichier de sauvegarde. Continuer ?`,
+    { title: "Nitrite", kind: "warning" }
+  ))) return;
+  await run(cmd, label);
+}
 
 async function run(cmd: string, label?: string) {
   isLoading.value = true;
@@ -93,7 +107,7 @@ const repairKeys = [
   { label: "Type de démarrage services", cmd: `reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services" /s /v Start` },
   { label: "Sauv. SYSTEM hive",         cmd: `reg save HKLM\\SYSTEM C:\\backup_SYSTEM.hiv /y` },
   { label: "Sauv. SAM hive",            cmd: `reg save HKLM\\SAM C:\\backup_SAM.hiv /y` },
-  { label: "Restaurer hive depuis fichier", cmd: `reg restore HKLM\\SYSTEM C:\\backup_SYSTEM.hiv` },
+  { label: "Restaurer hive depuis fichier", cmd: `reg restore HKLM\\SYSTEM C:\\backup_SYSTEM.hiv`, dangerous: true },
 ];
 </script>
 
@@ -191,7 +205,7 @@ const repairKeys = [
     <div class="section-card">
       <h3 class="section-title"><Shield :size="15" /> Réparations Registre Courantes</h3>
       <div class="cmd-grid">
-        <button v-for="c in repairKeys" :key="c.label" class="cmd-btn" :disabled="isLoading" @click="run(c.cmd, c.label)">
+        <button v-for="c in repairKeys" :key="c.label" class="cmd-btn" :class="{ 'cmd-btn-danger': c.dangerous }" :disabled="isLoading" @click="runMaybeConfirmed(c.cmd, c.label, c.dangerous)">
           {{ c.label }}
         </button>
       </div>
@@ -224,6 +238,8 @@ const repairKeys = [
 .cmd-btn { padding: 6px 10px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 11px; color: var(--text-secondary); cursor: pointer; transition: all .15s; text-align: left; font-family: inherit; }
 .cmd-btn:hover:not(:disabled) { border-color: var(--accent-primary); color: var(--accent-primary); }
 .cmd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cmd-btn-danger { border-color: rgba(239,68,68,.35); color: var(--danger); }
+.cmd-btn-danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
 .output-panel { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; }
 .output-panel.success { border-color: var(--success); }
 .output-panel.error { border-color: var(--danger); }
