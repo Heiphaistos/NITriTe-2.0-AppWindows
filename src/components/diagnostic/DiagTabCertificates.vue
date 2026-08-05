@@ -204,6 +204,11 @@ const filtered = computed(() => {
             </tr>
           </thead>
           <tbody>
+            <tr v-if="filtered.length === 0">
+              <td colspan="6" style="padding:16px 8px;text-align:center;color:var(--text-secondary)">
+                {{ data.certs.length === 0 ? 'Aucun certificat trouvé.' : 'Aucun certificat ne correspond à la recherche/au filtre.' }}
+              </td>
+            </tr>
             <tr v-for="(c, i) in filtered.slice(0, 150)" :key="i"
               :style="{borderBottom:'1px solid var(--border)',background:c.is_expired?'rgba(239,68,68,0.05)':''}">
               <td style="padding:5px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">

@@ -74,6 +74,11 @@
               </tr>
             </thead>
             <tbody>
+              <tr v-if="filteredList.length === 0">
+                <td colspan="6" class="td-muted" style="text-align:center;padding:16px 8px">
+                  {{ (listData?.drivers.length ?? 0) === 0 ? 'Aucun pilote détecté.' : 'Aucun pilote ne correspond à la recherche/au filtre.' }}
+                </td>
+              </tr>
               <tr v-for="d in filteredList.slice(0, 300)" :key="`drv-${d.name}-${d.provider}`"
                 :class="{ 'row-error': d.config_error !== 0, 'row-unsigned': d.config_error === 0 && !d.signed }">
                 <td class="td-name">
