@@ -410,19 +410,6 @@ public class MemUtil { [DllImport("psapi.dll")] public static extern int EmptyWo
             reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 38 /f
             Write-Output "Priorite applications premier plan augmentee"
         "#),
-        "disable_write_cache" => run_ps(r#"
-            $disks = Get-WmiObject Win32_DiskDrive -ErrorAction SilentlyContinue
-            $count = 0
-            foreach ($disk in $disks) {
-                try {
-                    $diskNum = $disk.Index
-                    $policy = Get-StoragePolicy -ErrorAction SilentlyContinue
-                    Set-Disk -Number $diskNum -IsReadOnly $false -ErrorAction SilentlyContinue
-                    $count++
-                } catch {}
-            }
-            Write-Output "Etat du cache d'ecriture verifie sur $count disque(s) (desactivation complete via Gestionnaire de peripheriques)"
-        "#),
         "disable_auto_maintenance" => run_ps(r#"
             reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance" /v MaintenanceDisabled /t REG_DWORD /d 1 /f
             Write-Output "Maintenance automatique desactivee"
