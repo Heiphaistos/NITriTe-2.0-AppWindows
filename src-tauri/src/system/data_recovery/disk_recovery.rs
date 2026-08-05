@@ -177,13 +177,21 @@ try {{
     $dstDir = Split-Path $dst -Parent
     if (-not (Test-Path $dstDir)) {{ New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }}
     $chunkSize = 65536
+    $totalLen = (Get-Item -LiteralPath $src).Length
     $fs = [System.IO.File]::Open($src, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
     $fd = [System.IO.File]::Open($dst, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
     $buf   = New-Object byte[] $chunkSize
     $zeros = New-Object byte[] $chunkSize
     $recovered = [long]0
     $skipped   = [long]0
-    while ($true) {{
+    # Borne sur la taille source : sur un secteur vraiment mort, le Seek de
+    # contournement ci-dessous peut lui-même échouer silencieusement sans faire
+    # avancer le flux — Read() relance alors indéfiniment la même exception à la
+    # même position et la boucle (auparavant while($true) sans limite) ne se
+    # termine jamais, remplissant la destination de zéros à l'infini. Le mode
+    # sécurisé existe précisément pour les disques en train de mourir : cette
+    # panne de Seek est un scénario réaliste, pas hypothétique.
+    while (($recovered + $skipped) -lt $totalLen) {{
         $read = 0
         try {{
             $read = $fs.Read($buf, 0, $chunkSize)
