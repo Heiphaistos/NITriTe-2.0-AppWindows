@@ -54,6 +54,12 @@ const groupedResults = computed(() => {
 const flatResults = computed(() => results.value);
 
 watch(() => props.modelValue, (open) => {
+  // Un debounceTimer en attente d'une saisie AVANT une fermeture rapide (<300ms)
+  // survivait à la réouverture : query/debouncedQuery étaient bien remis à "",
+  // mais le timer se déclenchait ensuite et réécrivait debouncedQuery avec
+  // l'ancienne saisie — affichant des résultats pour une recherche invisible
+  // dans un champ pourtant vide à l'écran. Toujours annuler le timer ici.
+  if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
   if (open) {
     query.value = "";
     debouncedQuery.value = "";
