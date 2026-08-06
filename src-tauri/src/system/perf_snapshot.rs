@@ -1,7 +1,4 @@
 use serde::Serialize;
-use std::process::Command;
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct DiskPerf {
@@ -113,14 +110,18 @@ $out | ConvertTo-Json -Depth 3 -Compress
 
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", ps])
-            .creation_flags(0x08000000)
-            .output();
+        // .output() n'avait aucun timeout — interrogé toutes les 3s par
+        // DiagTabPerf.vue tant que l'auto-refresh est actif (même famille de bug
+        // que wmi_timeout/check_command/ps()/monitor.rs, cycles 153-156) : un
+        // figement WMI ici gelait l'onglet Performances indéfiniment.
+        let output = crate::maintenance::commands::execute_system_command(
+            "powershell",
+            &["-NoProfile", "-NonInteractive", "-Command", ps],
+            5,
+        );
 
         if let Ok(o) = output {
-            let text = String::from_utf8_lossy(&o.stdout);
-            let v: serde_json::Value = match serde_json::from_str(text.trim()) {
+            let v: serde_json::Value = match serde_json::from_str(o.stdout.trim()) {
                 Ok(v) => v,
                 Err(_) => return PerfSnapshot::default(),
             };
@@ -159,4 +160,19 @@ $out | ConvertTo-Json -Depth 3 -Compress
         }
     }
     PerfSnapshot::default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Test d'intégration en conditions réelles sur cette machine — vérifie que
+    // le refactor .output() → execute_system_command (ajout du timeout, cycle
+    // 157) n'a pas cassé le chemin heureux. Le mécanisme timeout+kill lui-même
+    // est déjà prouvé par le test dédié d'execute_system_command (cycle 149).
+    #[test]
+    fn get_perf_snapshot_blocking_does_not_panic_and_returns_ram_total() {
+        let snap = get_perf_snapshot_blocking();
+        assert!(snap.ram_total_gb > 0.0, "une vraie machine a toujours au moins un peu de RAM totale");
+    }
 }

@@ -1,8 +1,5 @@
 use serde::Serialize;
-use std::process::Command;
 use std::collections::HashMap;
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct TcpConnection {
@@ -35,12 +32,17 @@ pub struct WifiInfo {
 
 #[cfg(target_os = "windows")]
 fn run_ps(script: &str) -> String {
-    let out = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .creation_flags(0x08000000)
-        .output();
-    match out {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+    // .output() n'avait aucun timeout — get_active_connections est mis en cache
+    // 20s côté frontend (dataCache.ts) donc rappelé périodiquement tant que
+    // l'onglet Connexions du Diagnostic reste consulté ; même famille de bug
+    // que wmi_timeout/check_command/ps()/monitor.rs/perf_snapshot.rs (cycles
+    // 153-157).
+    match crate::maintenance::commands::execute_system_command(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", script],
+        5,
+    ) {
+        Ok(o) => o.stdout.trim().to_string(),
         Err(_) => String::new(),
     }
 }
@@ -126,14 +128,15 @@ try {
 pub fn collect_wifi_info() -> Option<WifiInfo> {
     #[cfg(target_os = "windows")]
     {
-        let out = Command::new("netsh")
-            .args(["wlan", "show", "interfaces"])
-            .creation_flags(0x08000000)
-            .output()
-            .ok()?;
-        // netsh écrit en codepage OEM : decode_output (UTF-8 first, repli OEM)
-        // évite le mojibake des libellés/valeurs FR.
-        let text = crate::maintenance::commands::decode_output(&out.stdout);
+        // .output() n'avait aucun timeout ; netsh écrit en codepage OEM —
+        // execute_system_command applique déjà decode_output (UTF-8 first, repli
+        // OEM) en interne, évitant le mojibake des libellés/valeurs FR.
+        let out = crate::maintenance::commands::execute_system_command(
+            "netsh",
+            &["wlan", "show", "interfaces"],
+            5,
+        ).ok()?;
+        let text = out.stdout;
         let mut wifi = WifiInfo {
             ssid: String::new(), bssid: String::new(),
             signal_percent: 0, band: String::new(), channel: 0,
@@ -179,4 +182,26 @@ pub fn collect_wifi_info() -> Option<WifiInfo> {
     }
     #[cfg(not(target_os = "windows"))]
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Tests d'intégration en conditions réelles sur cette machine — vérifient que
+    // le refactor .output() → execute_system_command (ajout du timeout, cycle
+    // 157) n'a pas cassé le chemin heureux. Le mécanisme timeout+kill lui-même
+    // est déjà prouvé par le test dédié d'execute_system_command (cycle 149).
+
+    #[test]
+    fn run_ps_does_not_error_on_quick_script() {
+        assert_eq!(run_ps("Write-Output 'ok'"), "ok");
+    }
+
+    #[test]
+    fn collect_connections_does_not_panic() {
+        // Pas d'assertion de contenu (dépend des connexions actives au moment du
+        // test), juste l'absence de panique après le refactor.
+        let _ = collect_connections();
+    }
 }
