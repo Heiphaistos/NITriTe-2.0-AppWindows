@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { invoke, invokeRaw } from "@/utils/invoke";
 import NButton from "@/components/ui/NButton.vue";
 import NModal from "@/components/ui/NModal.vue";
@@ -19,6 +19,13 @@ const emit = defineEmits<{ (e: "result", r: RepairResult): void }>();
 const chkdskDrive = ref("");
 const chkdskFix = ref(true);
 const sfcDir = ref(props.sfcWindowsDir || "C:\\Windows");
+// Le sélecteur d'installation Windows (WinPEModePage.vue) reste visible et
+// cliquable AU-DESSUS des onglets, y compris pendant que celui-ci est déjà
+// monté sur l'onglet Réparation — sans ce watch, choisir une autre
+// installation ne mettait jamais à jour sfcDir : SFC/DISM et les commandes de
+// mot de passe hors-ligne continuaient silencieusement de cibler la PREMIÈRE
+// installation détectée, malgré la sélection visible d'une autre.
+watch(() => props.sfcWindowsDir, (v) => { sfcDir.value = v || "C:\\Windows"; });
 const offlineUsers = ref<OfflineUser[]>([]);
 const selectedUser = ref("");
 const newPassword = ref("");
