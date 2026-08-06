@@ -693,7 +693,10 @@ onMounted(() => {
             {{ filteredConns.length - 200 }} connexions supplémentaires — affinez le filtre.
           </p>
         </div>
-        <div v-else class="empty-state">Aucune connexion active.</div>
+        <!-- "Aucune connexion active" serait faux si connections contient des
+             entrées réelles mais que le filtre texte (connFilter) ne matche
+             rien — distinguer le cas réellement vide du cas filtre trop strict. -->
+        <div v-else class="empty-state">{{ connections.length === 0 ? 'Aucune connexion active.' : 'Aucune connexion ne correspond au filtre.' }}</div>
       </NCard>
 
     </div>
