@@ -11,6 +11,7 @@ const props = defineProps<{
   storageList: StoragePhysical[];
   volumes: VolumeInfo[];
   smartData: SmartDiskInfo[];
+  smartLoading?: boolean;
 }>();
 
 function smartForDisk(model: string) {
@@ -63,7 +64,12 @@ function healthVariant(h: string) {
             </div>
 
             <!-- Section SMART -->
-            <template v-if="smartData.length > 0">
+            <template v-if="smartLoading && smartData.length === 0">
+              <div class="muted" style="font-size:11px;margin-top:8px;font-style:italic">
+                SMART en cours de chargement...
+              </div>
+            </template>
+            <template v-else>
               <NCollapse
                 title="Santé SMART"
                 :storageKey="`diag-smart-${i}`"
@@ -136,9 +142,6 @@ function healthVariant(h: string) {
                 </template>
               </NCollapse>
             </template>
-            <div v-else class="muted" style="font-size:11px;margin-top:8px;font-style:italic">
-              SMART en cours de chargement...
-            </div>
           </div>
         </NCollapse>
       </template>

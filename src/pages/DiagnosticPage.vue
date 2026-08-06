@@ -129,6 +129,7 @@ const licenseInfo     = ref<WinLicense | null>(null);
 const updatesHistory  = ref<InstalledUpdate[]>([]);
 const folders         = ref<FolderEntry[]>([]);
 const smartData       = ref<SmartDiskInfo[]>([]);
+const smartLoading    = ref(false);
 const scanResult      = ref(null as import("@/types/diagnostic").ScanResult | null);
 const scanProblems    = ref<string[]>([]);
 
@@ -192,7 +193,16 @@ async function loadTab(tab: string, force = false) {
       case "ram":         ramData.value        = await invokeCached<RamDetailed>("get_ram_detailed", undefined, force); break;
       case "disks":
         storageList.value = await invokeCached<StoragePhysical[]>("get_storage_physical_info", undefined, force).catch(() => []);
-        invokeCached<SmartDiskInfo[]>("get_smart_info", undefined, force).then(v => { smartData.value = v; }).catch(() => {});
+        smartLoading.value = true;
+        // smartLoading distingue "requête encore en vol" de "terminée mais vide" —
+        // sans lui, DiagTabStorage.vue affichait "SMART en cours de chargement..."
+        // indéfiniment dès que get_smart_info échouait ou revenait vide, un message
+        // devenu factuellement faux (rien ne charge plus) qui laissait croire que
+        // les données allaient encore arriver.
+        invokeCached<SmartDiskInfo[]>("get_smart_info", undefined, force)
+          .then(v => { smartData.value = v; })
+          .catch(() => {})
+          .finally(() => { smartLoading.value = false; });
         invokeCached<VolumeInfo[]>("get_logical_volumes", undefined, force).then(v => { volumes.value = v; loadedTabs.value.add("volumes"); }).catch(() => {});
         break;
       case "network":
@@ -370,6 +380,7 @@ watch(activeTab, (tab) => {
             <DiagTabStorage
               v-else-if="activeTab === 'disks'"
               :tab="activeTab" :storageList="storageList" :volumes="volumes" :smartData="smartData"
+              :smartLoading="smartLoading"
             />
             <DiagTabNetwork
               v-else-if="activeTab === 'network' || activeTab === 'connections'"
