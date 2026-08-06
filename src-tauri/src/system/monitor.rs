@@ -238,19 +238,23 @@ pub fn start_monitoring(
 }
 
 fn collect_gpu_data() -> Result<Vec<GpuData>, String> {
-    #[cfg(target_os = "windows")]
-    use std::os::windows::process::CommandExt;
     // Try nvidia-smi first (NVIDIA GPUs)
-    let nvidia = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
-               "--format=csv,noheader,nounits"])
-        .creation_flags(0x08000000)
-        .output();
+    // .output() n'a aucun timeout — appelé toutes les ~4s en permanence par le
+    // thread de monitoring GPU/temp lancé au démarrage de l'app (pour toute sa
+    // durée de vie) : un figement (nvidia-smi/pilote instable) gèlerait ce thread
+    // indéfiniment. execute_system_command borne l'attente et tue le process au
+    // besoin, comme pour les autres découvertes de cette même famille de bug
+    // (wmi_timeout, check_command, ps() — cycles 153-155).
+    let nvidia = crate::maintenance::commands::execute_system_command(
+        "nvidia-smi",
+        &["--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+          "--format=csv,noheader,nounits"],
+        5,
+    );
 
     if let Ok(out) = nvidia {
-        if out.status.success() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            let gpus: Vec<GpuData> = text.lines()
+        if out.success {
+            let gpus: Vec<GpuData> = out.stdout.lines()
                 .filter(|l| !l.trim().is_empty())
                 .map(|line| {
                     let parts: Vec<&str> = line.splitn(5, ',').map(str::trim).collect();
@@ -272,7 +276,6 @@ fn collect_gpu_data() -> Result<Vec<GpuData>, String> {
     // Fallback: PowerShell GPU counters (AMD/Intel/others)
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         let ps = format!("{}{}", crate::utils::ps::LOC_COUNTER_PRELUDE, r#"
 try {
     $gpus = Get-WmiObject Win32_VideoController -ErrorAction Stop | Where-Object { $_.Name -notlike '*Basic*' -and $_.Name -notlike '*Miroir*' }
@@ -318,13 +321,12 @@ try {
     $result | ConvertTo-Json -Compress
 } catch { Write-Output '[]' }
 "#);
-        let out = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", ps.as_str()])
-            .creation_flags(0x08000000)
-            .output()
-            .map_err(|e| e.to_string())?;
-        let text = crate::maintenance::commands::decode_output(&out.stdout);
-        let trimmed = text.trim();
+        let out = crate::maintenance::commands::execute_system_command(
+            "powershell",
+            &["-NoProfile", "-NonInteractive", "-Command", ps.as_str()],
+            5,
+        ).map_err(|e| e.to_string())?;
+        let trimmed = out.stdout.trim();
         if trimmed.is_empty() || trimmed == "[]" { return Ok(vec![]); }
         let arr: Vec<serde_json::Value> = serde_json::from_str(trimmed)
             .unwrap_or_else(|_| serde_json::from_str(&format!("[{}]", trimmed)).unwrap_or_default());
@@ -344,7 +346,6 @@ try {
 fn collect_temperatures() -> Result<(Option<i32>, Vec<DiskTemp>), String> {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         let ps = r#"
 $out = @{ cpu_temp = $null; disk_temps = @() }
 try {
@@ -358,13 +359,12 @@ try {
 } catch {}
 $out | ConvertTo-Json -Compress -Depth 3
 "#;
-        let out = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", ps])
-            .creation_flags(0x08000000)
-            .output()
-            .map_err(|e| e.to_string())?;
-        let text = String::from_utf8_lossy(&out.stdout);
-        let v: serde_json::Value = serde_json::from_str(text.trim()).unwrap_or_default();
+        let out = crate::maintenance::commands::execute_system_command(
+            "powershell",
+            &["-NoProfile", "-NonInteractive", "-Command", ps],
+            5,
+        ).map_err(|e| e.to_string())?;
+        let v: serde_json::Value = serde_json::from_str(out.stdout.trim()).unwrap_or_default();
         let cpu_temp = v.get("cpu_temp").and_then(|t| t.as_i64()).map(|t| t as i32);
         let disk_temps = v.get("disk_temps").and_then(|a| a.as_array()).map(|arr| {
             arr.iter().filter_map(|item| {
@@ -382,20 +382,18 @@ $out | ConvertTo-Json -Compress -Depth 3
 fn collect_disk_io() -> Result<(u64, u64), String> {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         let ps = r#"
 try {
     $d = Get-WmiObject -Class Win32_PerfRawData_PerfDisk_LogicalDisk -Filter "Name='_Total'" -ErrorAction Stop
     "$($d.DiskReadBytesPersec) $($d.DiskWriteBytesPersec)"
 } catch { "0 0" }
 "#;
-        let out = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", ps])
-            .creation_flags(0x08000000)
-            .output()
-            .map_err(|e| e.to_string())?;
-        let text = String::from_utf8_lossy(&out.stdout);
-        let parts: Vec<&str> = text.split_whitespace().collect();
+        let out = crate::maintenance::commands::execute_system_command(
+            "powershell",
+            &["-NoProfile", "-NonInteractive", "-Command", ps],
+            5,
+        ).map_err(|e| e.to_string())?;
+        let parts: Vec<&str> = out.stdout.split_whitespace().collect();
         let r = parts.first().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
         let w = parts.get(1).and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
         Ok((r, w))
@@ -405,23 +403,24 @@ try {
 }
 
 fn get_battery_info() -> Option<BatteryData> {
-    #[cfg(target_os = "windows")]
-    use std::os::windows::process::CommandExt;
     // -NoProfile -NonInteractive : sans ça, PowerShell charge le profil user à
     // chaque relevé batterie (latence dans la boucle de monitoring, sortie
     // potentiellement altérée par le profil). Cohérent avec les autres appels.
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", "(Get-WmiObject Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json)"])
-        .creation_flags(0x08000000)
-        .output()
-        .ok()?;
+    // Appelé à CHAQUE tick de la boucle principale de monitoring (interval_ms,
+    // 2s par défaut, configurable jusqu'à 250ms) — sans timeout, un figement ici
+    // gelait tout le thread principal (CPU/RAM/disque/réseau/process/alertes
+    // en même temps), pas seulement la batterie.
+    let output = crate::maintenance::commands::execute_system_command(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", "(Get-WmiObject Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json)"],
+        5,
+    ).ok()?;
 
-    if !output.status.success() {
+    if !output.success {
         return None;
     }
 
-    let text = String::from_utf8_lossy(&output.stdout);
-    let text = text.trim();
+    let text = output.stdout.trim();
     if text.is_empty() {
         return None; // Pas de batterie (desktop)
     }
@@ -433,4 +432,36 @@ fn get_battery_info() -> Option<BatteryData> {
     let plugged = status == 2;
 
     Some(BatteryData { percent, plugged })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Tests d'intégration en conditions réelles (vraies commandes PowerShell/nvidia-smi
+    // sur cette machine) — vérifient que le refactor .output() → execute_system_command
+    // (ajout du timeout+kill, cycle 156) n'a pas cassé le chemin heureux. Pas d'assertion
+    // de valeur exacte (dépend du matériel/charge au moment du test), juste l'absence
+    // d'erreur/panic. Le mécanisme timeout+kill lui-même est déjà prouvé par le test
+    // dédié d'execute_system_command (maintenance/commands.rs, cycle 149).
+
+    #[test]
+    fn get_battery_info_does_not_panic() {
+        let _ = get_battery_info();
+    }
+
+    #[test]
+    fn collect_disk_io_does_not_error() {
+        assert!(collect_disk_io().is_ok(), "collect_disk_io should not error after the execute_system_command refactor");
+    }
+
+    #[test]
+    fn collect_temperatures_does_not_error() {
+        assert!(collect_temperatures().is_ok(), "collect_temperatures should not error after the execute_system_command refactor");
+    }
+
+    #[test]
+    fn collect_gpu_data_does_not_error() {
+        assert!(collect_gpu_data().is_ok(), "collect_gpu_data should not error after the execute_system_command refactor");
+    }
 }
