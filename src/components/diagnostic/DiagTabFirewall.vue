@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
+import type { CommandResult } from "@/types/diagnostic";
 import NBadge from "@/components/ui/NBadge.vue";
 import NSpinner from "@/components/ui/NSpinner.vue";
 import NButton from "@/components/ui/NButton.vue";
@@ -31,11 +32,18 @@ async function disableAllProfiles() {
   if (!(await confirm("Désactiver le pare-feu sur tous les profils ? Cela réduit la sécurité du système.", { title: "Nitrite", kind: "warning" }))) return;
   fwActionLoading.value = true;
   try {
-    await invoke("run_system_command", {
+    // run_system_command ne rejette jamais sur un code de sortie non-nul (voir
+    // execute_system_command : Ok(CommandResult{ success: status.success(), .. })
+    // dans tous les cas) — sans vérifier .success ici, un échec réel de netsh
+    // (ex: app non élevée) affichait quand même "Pare-feu désactivé", laissant
+    // croire à tort que la sécurité du système avait été réduite alors que le
+    // pare-feu restait pleinement actif.
+    const r = await invoke<CommandResult>("run_system_command", {
       cmd: "cmd",
       args: ["/c", "netsh advfirewall set allprofiles state off"]
     });
-    showFwMsg("Pare-feu désactivé sur tous les profils");
+    if (r.success) showFwMsg("Pare-feu désactivé sur tous les profils");
+    else showFwMsg("Échec : " + (r.stderr || r.stdout || `code ${r.exit_code}`), true);
   } catch (e: unknown) { showFwMsg("Erreur : " + String(e), true); }
   fwActionLoading.value = false;
 }

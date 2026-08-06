@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
+import type { CommandResult } from "@/types/diagnostic";
 import NCard from "@/components/ui/NCard.vue";
 import NButton from "@/components/ui/NButton.vue";
 import NBadge from "@/components/ui/NBadge.vue";
@@ -53,13 +54,20 @@ async function saveDesc(e: BcdEntry) {
   if (/[&|;<>"`\n\r]/.test(desc)) { notify.error("Caractères invalides", "La description ne peut pas contenir & | ; < > \" ` ou des sauts de ligne."); return; }
   savingDesc.value = true;
   try {
-    await invoke("run_system_command", {
+    // run_system_command ne rejette jamais sur un code de sortie non-nul (voir
+    // execute_system_command) — sans verifier .success, un bcdedit refuse
+    // (app non elevee) affichait quand meme "Description mise a jour".
+    const r = await invoke<CommandResult>("run_system_command", {
       cmd: "bcdedit",
       args: ["/set", `{${e.id}}`, "description", desc],
     });
-    notify.success("Description mise à jour");
-    cancelEdit();
-    await load();
+    if (r.success) {
+      notify.success("Description mise à jour");
+      cancelEdit();
+      await load();
+    } else {
+      notify.error("Échec de la mise à jour", r.stderr || r.stdout || `code ${r.exit_code}`);
+    }
   } catch (err: unknown) {
     notify.error("Erreur", String(err));
   }
@@ -70,12 +78,16 @@ async function enableSafeMode() {
   if (!(await confirm("Activer le Safe Mode au prochain démarrage ? Le système redémarrera en mode minimal.", { title: "Nitrite", kind: "warning" }))) return;
   togglingMode.value = true;
   try {
-    await invoke("run_system_command", {
+    const r = await invoke<CommandResult>("run_system_command", {
       cmd: "bcdedit",
       args: ["/set", "{current}", "safeboot", "minimal"],
     });
-    notify.success("Safe Mode activé", "Prendra effet au prochain démarrage");
-    await load();
+    if (r.success) {
+      notify.success("Safe Mode activé", "Prendra effet au prochain démarrage");
+      await load();
+    } else {
+      notify.error("Échec de l'activation du Safe Mode", r.stderr || r.stdout || `code ${r.exit_code}`);
+    }
   } catch (e: unknown) {
     notify.error("Erreur", String(e));
   }
@@ -86,12 +98,16 @@ async function disableSafeMode() {
   if (!(await confirm("Désactiver le Safe Mode ? Le système démarrera normalement au prochain redémarrage.", { title: "Nitrite", kind: "warning" }))) return;
   togglingMode.value = true;
   try {
-    await invoke("run_system_command", {
+    const r = await invoke<CommandResult>("run_system_command", {
       cmd: "bcdedit",
       args: ["/deletevalue", "{current}", "safeboot"],
     });
-    notify.success("Safe Mode désactivé");
-    await load();
+    if (r.success) {
+      notify.success("Safe Mode désactivé");
+      await load();
+    } else {
+      notify.error("Échec de la désactivation du Safe Mode", r.stderr || r.stdout || `code ${r.exit_code}`);
+    }
   } catch (e: unknown) {
     notify.error("Erreur", String(e));
   }
