@@ -9,11 +9,44 @@ use std::os::windows::process::CommandExt;
 /// de `$OutputEncoding` — from_utf8_lossy le transformait en mojibake. Les
 /// scripts déjà UTF-8/JSON restent inchangés (fast path UTF-8, aucune régression).
 pub fn ps(script: &str) -> Result<String, String> {
-    let out = std::process::Command::new("powershell")
+    ps_with_timeout(script, 10)
+}
+
+/// Comme `ps()`, mais avec un timeout explicite en secondes. `.output()` seul
+/// (comportement d'origine) n'a aucune limite — un script PowerShell figé
+/// (namespace WMI tiers non répondant, ex: LibreHardwareMonitor/OpenHardwareMonitor
+/// crashé mais toujours "enregistré") bloquait le thread appelant indéfiniment.
+/// Ce helper est partagé par `sensors.rs` (interrogé toutes les 3s par
+/// TemperaturesPage.vue tant que la page reste ouverte — un utilisateur qui
+/// surveille les températures pendant un stress test verrait l'affichage se
+/// figer silencieusement, sans le moindre message d'erreur, exactement quand
+/// cette information compte le plus) et `dll_scanner.rs`. Même pattern
+/// timeout+taskkill que `execute_system_command`/`check_command_with_timeout`.
+pub fn ps_with_timeout(script: &str, timeout_secs: u64) -> Result<String, String> {
+    let child = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .creation_flags(0x08000000)
-        .output()
+        .spawn()
         .map_err(|e| e.to_string())?;
+    let pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    let out = match rx.recv_timeout(std::time::Duration::from_secs(timeout_secs)) {
+        Ok(result) => result.map_err(|e| e.to_string())?,
+        Err(_) => {
+            #[cfg(target_os = "windows")]
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .creation_flags(0x08000000)
+                .spawn();
+            tracing::warn!("ps(): timeout {}s dépassé — script PowerShell tué de force", timeout_secs);
+            return Err(format!("PowerShell timeout ({}s)", timeout_secs));
+        }
+    };
     #[cfg(target_os = "windows")]
     { Ok(crate::maintenance::commands::decode_output(&out.stdout).trim().to_string()) }
     #[cfg(not(target_os = "windows"))]
@@ -50,3 +83,34 @@ function Loc-Counter($n) {
     return $n
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ps_with_timeout_kills_hung_script() {
+        let start = std::time::Instant::now();
+        let result = ps_with_timeout("Start-Sleep -Seconds 30", 2);
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "un script encore en cours après le timeout doit renvoyer une erreur, pas un faux succès silencieux");
+        assert!(
+            elapsed.as_secs() < 10,
+            "ps_with_timeout a attendu {}s, le timeout+taskkill ne fonctionne pas",
+            elapsed.as_secs()
+        );
+    }
+
+    #[test]
+    fn ps_with_timeout_returns_output_for_quick_script() {
+        let result = ps_with_timeout("Write-Output 'hello'", 10);
+        assert_eq!(result.unwrap(), "hello");
+    }
+
+    #[test]
+    fn ps_default_timeout_still_works_for_quick_script() {
+        let result = ps("Write-Output 'ok'");
+        assert_eq!(result.unwrap(), "ok");
+    }
+}
