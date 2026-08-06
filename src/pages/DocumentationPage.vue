@@ -18,6 +18,7 @@ interface DocSection {
 }
 
 const search = ref("");
+const appVersion = __APP_VERSION__;
 
 const sections: DocSection[] = [
   {
@@ -103,7 +104,7 @@ const sections: DocSection[] = [
     title: "Installation d'applications",
     icon: Download,
     content: [
-      { type: "text", value: "NiTriTe propose plus de 150 applications organisees par categorie, installables via WinGet." },
+      { type: "text", value: "NiTriTe propose plus de 700 applications organisees en 29 categories, installables via WinGet." },
       { type: "list", value: [
         "Recherchez par nom ou filtrez par categorie (Navigateurs, Bureautique, Dev...)",
         "Cliquez sur 'Installer' pour lancer l'installation silencieuse",
@@ -140,7 +141,7 @@ const sections: DocSection[] = [
         "Drivers : liste complete avec export CSV, detection des pilotes obsoletes",
         "Mises a jour : verification via WinGet des applications a mettre a jour",
         "Antivirus : lancement de scans Windows Defender (rapide ou complet)",
-        "Outils Windows : plus de 110 outils systeme accessibles en un clic",
+        "Outils Windows : plus de 500 outils systeme accessibles en un clic",
       ] },
     ],
   },
@@ -172,9 +173,9 @@ const sections: DocSection[] = [
       { type: "list", value: [
         "Historique de commandes navigable avec les fleches haut/bas",
         "Affichage stdout et stderr avec coloration",
-        "30 scripts pre-integres organises en 6 categories",
+        "133 scripts pre-integres organises en 11 categories",
       ] },
-      { type: "text", value: "Categories de scripts : Nettoyage, Reseau, Reparation systeme, Performance, Diagnostic, Tweaks Windows." },
+      { type: "text", value: "Categories de scripts : Diagnostic, Drivers, Nettoyage, Performance, Registre, Reparation, Reseau, Sauvegardes, Securite, Tweaks, Utilisateurs." },
       { type: "warning", value: "Certains scripts necessitent des droits administrateur pour fonctionner correctement." },
     ],
   },
@@ -215,7 +216,7 @@ const sections: DocSection[] = [
       { type: "text", value: "L'assistant IA de NiTriTe fonctionne en mode 100% portable : aucune installation sur le PC cible. Tout tourne depuis le dossier de l'application." },
       { type: "list", value: [
         "Étape 1 — Téléchargez le moteur IA (llama-server.exe) depuis l'onglet Assistant IA",
-        "Étape 2 — Téléchargez un modèle GGUF depuis le catalogue (6 modèles disponibles)",
+        "Étape 2 — Téléchargez un modèle GGUF depuis le catalogue (18 modèles disponibles)",
         "Étape 3 — Démarrez le serveur et posez vos questions",
         "Le moteur et les modèles sont stockés dans logiciel/AI/ et models/",
         "Aucune trace laissée sur le système cible",
@@ -350,11 +351,11 @@ const filteredSections = computed(() => {
         <div class="section-header"><Info :size="16" /><span>A propos de NiTriTe</span></div>
       </template>
       <div class="about-info">
-        <div class="about-row"><span>Application</span><span>Nitrite 6.0</span></div>
-        <div class="about-row"><span>Version</span><span>6.0.0</span></div>
+        <div class="about-row"><span>Application</span><span>NiTriTe</span></div>
+        <div class="about-row"><span>Version</span><span>{{ appVersion }}</span></div>
         <div class="about-row"><span>Stack</span><span>Tauri v2 + Rust + Vue 3 + TypeScript</span></div>
         <div class="about-row"><span>IA</span><span>llama.cpp portable + Ollama</span></div>
-        <div class="about-row"><span>Onglets diagnostic</span><span>33 onglets, 6 catégories</span></div>
+        <div class="about-row"><span>Onglets diagnostic</span><span>33 onglets, 7 catégories</span></div>
         <div class="about-row"><span>Auteur</span><span>Momo</span></div>
         <div class="about-row"><span>Licence</span><span>Usage interne</span></div>
       </div>
