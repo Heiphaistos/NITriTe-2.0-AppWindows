@@ -2,6 +2,7 @@
 defineOptions({ name: "DataRecoveryPage" });
 import { ref, computed, onMounted } from "vue";
 import { invoke, isTauriContext } from "@/utils/invoke";
+import { formatWmiDateTime } from "@/utils/wmiDate";
 import NButton from "@/components/ui/NButton.vue";
 import NSpinner from "@/components/ui/NSpinner.vue";
 import { useNotificationStore } from "@/stores/notifications";
@@ -338,10 +339,10 @@ async function restoreRecycle(file: RecoveredFile) {
 
 
 
-function formatDate(raw: string) {
-  if (!raw) return "—";
-  try { return new Date(raw).toLocaleString("fr-FR"); } catch { return raw; }
-}
+// creation_time (Win32_ShadowCopy.InstallDate côté backend) est un CIM_DATETIME
+// WMI brut ("20260803162919.545193+120"), pas une chaîne parsable par new Date()
+// — voir formatWmiDateTime() pour le détail du bug (Invalid Date silencieux).
+const formatDate = formatWmiDateTime;
 function formatSize(bytes: number) {
   if (!bytes) return "—";
   if (bytes < 1024) return `${bytes} o`;
