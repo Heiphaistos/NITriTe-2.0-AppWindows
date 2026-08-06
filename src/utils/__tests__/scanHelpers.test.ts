@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { kbStr, fullRegPath } from "@/composables/scan/scanExportHelpers";
+import { kbStr, fullRegPath, mdCell } from "@/composables/scan/scanExportHelpers";
 
 describe("kbStr", () => {
   it("valeur < 1024 → affiche KB", () => {
@@ -55,5 +55,44 @@ describe("fullRegPath", () => {
 
   it("sans nom — retourne seulement le chemin expansé", () => {
     expect(fullRegPath("HKLM\\SOFTWARE")).toBe("HKEY_LOCAL_MACHINE\\SOFTWARE");
+  });
+});
+
+describe("mdCell", () => {
+  it("échappe le pipe (délimiteur de colonne de tableau)", () => {
+    expect(mdCell("cmd.exe /c dir | more")).toBe("cmd.exe /c dir \\| more");
+  });
+
+  it("échappe le backslash en premier pour ne pas doubler le \\| inséré ensuite", () => {
+    expect(mdCell("a\\|b")).toBe("a\\\\\\|b");
+  });
+
+  it("remplace les sauts de ligne par un espace", () => {
+    expect(mdCell("line1\nline2")).toBe("line1 line2");
+    expect(mdCell("line1\r\nline2")).toBe("line1 line2");
+  });
+
+  it("remplace le backtick par une apostrophe (ne casse pas un span de code)", () => {
+    expect(mdCell("`rm -rf /`")).toBe("'rm -rf /'");
+  });
+
+  it("échappe les chevrons pour empêcher le HTML brut de survivre au rendu", () => {
+    expect(mdCell("<img src=x onerror=alert(1)>")).toBe("&lt;img src=x onerror=alert(1)&gt;");
+  });
+
+  it("null/undefined → chaîne vide", () => {
+    expect(mdCell(null)).toBe("");
+    expect(mdCell(undefined)).toBe("");
+  });
+
+  it("valeur repro cycle 159 : erreur de scan avec backtick et pipe ne casse plus le span de code", () => {
+    // Reproduit exactement le bug corrigé dans useScanExportMd.ts : la variable
+    // de boucle "e" masquait la fonction d'échappement "e", laissant ce genre
+    // de valeur passer intégralement non échappée dans le rapport exporté.
+    const raw = "exception in `Get-WmiObject` call | pipe-and-backtick";
+    const escaped = mdCell(raw);
+    expect(escaped).not.toContain("`Get-WmiObject`");
+    expect(escaped).not.toContain(" | pipe");
+    expect(escaped).toBe("exception in 'Get-WmiObject' call \\| pipe-and-backtick");
   });
 });

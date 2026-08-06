@@ -1,4 +1,4 @@
-import { invoke, invokeRaw, useNotificationStore, fullRegPath, type Solution } from "./scanExportHelpers";
+import { invoke, invokeRaw, useNotificationStore, fullRegPath, mdCell, type Solution } from "./scanExportHelpers";
 import type { ScanResult, BatteryDetailed } from "@/types/diagnostic";
 
 export async function exportScanMd(
@@ -10,8 +10,7 @@ export async function exportScanMd(
   if (!scanResult) return;
   const sr = scanResult;
   const now = new Date().toLocaleString();
-  const e = (s: unknown) => String(s ?? "").replace(/\\/g, "\\\\").replace(/\r?\n/g, " ").replace(/\|/g, "\\|").replace(/`/g, "'");
-  const row = (...cells: string[]) => `| ${cells.map(e).join(" | ")} |`;
+  const row = (...cells: string[]) => `| ${cells.map(mdCell).join(" | ")} |`;
   const head = (...cols: string[]) => [row(...cols), `|${cols.map(()=>"---").join("|")}|`];
 
   const L: string[] = [
@@ -270,7 +269,13 @@ export async function exportScanMd(
 
   if (sr.scan_errors?.length) {
     L.push(`### ⚙️ Erreurs de Scan (${sr.scan_errors.length})`, ``);
-    for (const e of sr.scan_errors) L.push(`- \`${e}\``);
+    // Historiquement `for (const e of ...)` masquait la fonction d'échappement
+    // locale (alors nommée "e"), laissant sr.scan_errors (texte d'erreur brut
+    // PowerShell/WMI, potentiellement porteur de backtick/pipe) passer
+    // complètement non échappé, cassant la structure du span de code inline en
+    // Markdown — corrigé en renommant la variable de boucle et en appelant
+    // mdCell() explicitement.
+    for (const err of sr.scan_errors) L.push(`- \`${mdCell(err)}\``);
     L.push(``);
   }
 
