@@ -404,7 +404,11 @@ onUnmounted(() => {
         </template>
         <div v-if="filteredFile.length === 0" class="logs-empty">
           <Database :size="24" style="opacity:.3;margin-bottom:8px" />
-          <div>Aucun log persisté</div>
+          <!-- fileLogs.length > 0 avec filteredFile.length === 0 veut dire que des
+               logs existent bel et bien mais qu'aucun ne correspond aux filtres/
+               recherche actifs — "Aucun log persisté" serait alors une affirmation
+               fausse sur le fichier lui-même. -->
+          <div>{{ fileLogs.length === 0 ? 'Aucun log persisté' : 'Aucun log ne correspond aux filtres' }}</div>
         </div>
       </div>
     </NCard>
