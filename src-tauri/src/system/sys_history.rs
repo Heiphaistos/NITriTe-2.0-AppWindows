@@ -116,8 +116,15 @@ try {
         Where-Object { $_.DisplayName -and $_.InstallDate -and $_.InstallDate -ge $date30 } |
         Sort-Object InstallDate -Descending | Select-Object -First 30
     $out.RecentInstalls = @($recent | ForEach-Object {
+        # InstallDate registre = "yyyyMMdd" brut (ex: "20260802") — reformaté en
+        # "yyyy-MM-dd" pour être lisible dans DiagTabHistory.vue, comme le fait déjà
+        # get_installed_apps() (installer/uninstaller.rs) pour la même donnée sur
+        # UninstallerPage.vue. Sans ça la table "Logiciels installés" affichait un
+        # nombre brut illisible à la place d'une date.
+        $d = [string]$_.InstallDate
+        $dFmt = if ($d -match '^(\d{4})(\d{2})(\d{2})$') { "$($matches[1])-$($matches[2])-$($matches[3])" } else { $d }
         @{name=[string]$_.DisplayName; version=[string]$_.DisplayVersion;
-          publisher=[string]$_.Publisher; installDate=[string]$_.InstallDate}
+          publisher=[string]$_.Publisher; installDate=$dFmt}
     })
 } catch { $out.RecentInstalls = @() }
 
