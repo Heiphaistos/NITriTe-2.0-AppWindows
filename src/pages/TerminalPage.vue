@@ -159,6 +159,12 @@ async function executeCommand(cmd?: string) {
 function handleKeyDown(e: KeyboardEvent) {
   if (e.key === "Enter") {
     executeCommand();
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
+    // Documenté dans KeyboardShortcutsModal.vue ("Ctrl+L : Vider la console")
+    // mais jamais réellement câblé — clearOutput() n'était accessible que via
+    // le bouton, le raccourci annoncé ne faisait donc rien.
+    e.preventDefault();
+    clearOutput();
   } else if (e.key === "ArrowUp") {
     e.preventDefault();
     if (historyIndex.value > 0) {

@@ -4,6 +4,13 @@ import NModal from "@/components/ui/NModal.vue";
 defineProps<{ modelValue: boolean }>();
 defineEmits<{ "update:modelValue": [v: boolean] }>();
 
+// Liste vérifiée cycle 139 contre le code réel : 4 raccourcis annoncés ici
+// n'étaient câblés nulle part dans l'app (F5/Ctrl+R "Diagnostic", Tab
+// "Terminal", Ctrl+Entrée "Scripts") — retirés plutôt que de continuer à
+// promettre une fonctionnalité inexistante. Ctrl+L "Terminal" a été câblé
+// (TerminalPage.vue::handleKeyDown) au lieu d'être retiré, seul cas où la
+// fonction cible (clearOutput()) existait déjà et ne demandait qu'un
+// raccourci clavier.
 const sections = [
   {
     title: "Navigation",
@@ -15,24 +22,10 @@ const sections = [
     ],
   },
   {
-    title: "Diagnostic",
-    shortcuts: [
-      { keys: ["F5"], desc: "Actualiser l'onglet actif" },
-      { keys: ["Ctrl", "R"], desc: "Recharger les données" },
-    ],
-  },
-  {
     title: "Terminal",
     shortcuts: [
       { keys: ["Ctrl", "L"], desc: "Vider la console" },
       { keys: ["↑ / ↓"], desc: "Historique des commandes" },
-      { keys: ["Tab"], desc: "Autocomplétion" },
-    ],
-  },
-  {
-    title: "Scripts",
-    shortcuts: [
-      { keys: ["Ctrl", "Entrée"], desc: "Exécuter le script sélectionné" },
     ],
   },
 ];
