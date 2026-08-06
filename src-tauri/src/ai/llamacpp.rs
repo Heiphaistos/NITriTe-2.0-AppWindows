@@ -612,13 +612,54 @@ pub async fn chat(
         .timeout(std::time::Duration::from_secs(300))
         .send().await
         .map_err(|e| NiTriTeError::OllamaUnavailable(e.to_string()))?;
+    // Même bug que ai::ollama::chat() (corrigé au cycle 142) : llama-server suit
+    // le format d'erreur OpenAI ({"error": {"message": "...", ...}}) même sur un
+    // statut non-succès, donc resp.json() réussit quand même — sans ce check,
+    // "choices" est absent du corps d'erreur et unwrap_or("") renvoie Ok(""),
+    // affichant une bulle de chat vide au lieu du vrai message d'erreur.
+    let status = resp.status();
     let result: serde_json::Value = resp.json().await?;
+    parse_chat_completion(status, result)
+}
+
+fn parse_chat_completion(status: reqwest::StatusCode, result: serde_json::Value) -> Result<String, NiTriTeError> {
+    if !status.is_success() {
+        let detail = result["error"]["message"].as_str()
+            .or_else(|| result["error"].as_str())
+            .unwrap_or("réponse sans détail").to_string();
+        return Err(NiTriTeError::OllamaUnavailable(format!("llama-server a renvoyé une erreur ({status}) : {detail}")));
+    }
     Ok(result["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_chat_completion_extracts_content_on_success() {
+        let body = serde_json::json!({"choices": [{"message": {"role": "assistant", "content": "Bonjour"}}]});
+        let r = parse_chat_completion(reqwest::StatusCode::OK, body).unwrap();
+        assert_eq!(r, "Bonjour");
+    }
+
+    #[test]
+    fn parse_chat_completion_errors_on_non_success_status_instead_of_returning_empty_ok() {
+        // Format d'erreur OpenAI réel utilisé par llama-server sur une requête invalide.
+        let body = serde_json::json!({"error": {"message": "context length exceeded", "type": "invalid_request_error"}});
+        let r = parse_chat_completion(reqwest::StatusCode::BAD_REQUEST, body);
+        assert!(r.is_err(), "un status non-succès doit produire une Err, jamais un Ok(\"\") silencieux");
+        assert!(format!("{}", r.unwrap_err()).contains("context length exceeded"));
+    }
+
+    #[test]
+    fn parse_chat_completion_errors_on_server_error_with_string_error_field() {
+        // Repli si "error" est une string brute plutôt qu'un objet {"message": ...}.
+        let body = serde_json::json!({"error": "model not loaded"});
+        let r = parse_chat_completion(reqwest::StatusCode::INTERNAL_SERVER_ERROR, body);
+        assert!(r.is_err());
+        assert!(format!("{}", r.unwrap_err()).contains("model not loaded"));
+    }
 
     #[test]
     fn valid_github_url_accepted() {
