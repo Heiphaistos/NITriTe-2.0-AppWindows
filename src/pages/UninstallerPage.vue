@@ -728,7 +728,16 @@ onMounted(loadApps);
           </tr>
         </tbody>
       </table>
-      <p v-if="sorted.length === 0" class="no-results">Aucun résultat pour « {{ search }} »</p>
+      <!-- Le message attribuait toujours l'absence de résultat à la recherche
+           texte seule, même quand search était vide (guillemets vides « »
+           affichés) ou quand un AUTRE filtre actif (éditeur/taille min/
+           catégorie) était la vraie cause — ex: taper "chrome" qui matche bien
+           par nom mais qu'un filtre catégorie exclut quand même, rapportant à
+           tort "Aucun résultat pour « chrome »" comme si la recherche avait
+           échoué. Message générique désormais, sans attribuer une cause précise. -->
+      <p v-if="sorted.length === 0" class="no-results">
+        {{ apps.length === 0 ? 'Aucune application installée trouvée.' : 'Aucun résultat — ajustez la recherche ou les filtres.' }}
+      </p>
     </div>
 
     <!-- Empty -->
