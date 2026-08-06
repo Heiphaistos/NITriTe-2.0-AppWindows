@@ -40,6 +40,19 @@ function addAlert(id: string, type: 'temp' | 'disk' | 'ram' | 'smart', severity:
   }
 }
 
+// Retire les alertes d'un type dont l'id n'est plus dans currentIds : sans ça,
+// une alerte restait affichée indéfiniment (bannière globale sur toute l'app,
+// voir NAlertBanner.vue) même longtemps après le retour à la normale — un pic
+// de température transitoire de quelques secondes laissait un faux "Surchauffe
+// critique !" épinglé jusqu'au dismiss manuel, et empêchait toute nouvelle
+// notification pour une récidive du même capteur tant que l'ancienne alerte
+// n'était pas fermée. N'est appelé qu'après un sondage RÉUSSI (currentIds
+// reflète l'état réel) — un échec de sondage ne doit jamais être interprété
+// comme "condition résolue".
+function clearResolvedAlerts(type: 'temp' | 'disk' | 'ram' | 'smart', currentIds: Set<string>) {
+  activeAlerts.value = activeAlerts.value.filter(a => a.type !== type || currentIds.has(a.id));
+}
+
 export function dismissAlert(id: string) {
   const alert = activeAlerts.value.find(a => a.id === id);
   if (alert) alert.dismissed = true;
@@ -53,59 +66,81 @@ export function useProactiveAlerts(thresholds: AlertThresholds = DEFAULT_THRESHO
   async function checkOnce() {
     try {
       // Vérifier températures
-      const temps = await invoke<Array<{ sensor_name: string; temp_celsius: number; source: string }>>('get_temperatures').catch(() => []);
+      const temps = await invoke<Array<{ sensor_name: string; temp_celsius: number; source: string }>>('get_temperatures');
+      const currentTempIds = new Set<string>();
       for (const t of temps) {
         if (t.temp_celsius <= 0) continue;
         if (t.sensor_name.toLowerCase().includes('cpu') || t.source.toLowerCase().includes('cpu')) {
           if (t.temp_celsius >= thresholds.cpuTempCritical) {
-            addAlert(`cpu-temp-${t.sensor_name}`, 'temp', 'critical', `CPU ${t.sensor_name}: ${t.temp_celsius}°C — Surchauffe critique!`);
+            const id = `cpu-temp-${t.sensor_name}`;
+            addAlert(id, 'temp', 'critical', `CPU ${t.sensor_name}: ${t.temp_celsius}°C — Surchauffe critique!`);
+            currentTempIds.add(id);
           }
         }
         if (t.sensor_name.toLowerCase().includes('gpu')) {
           if (t.temp_celsius >= thresholds.gpuTempCritical) {
-            addAlert(`gpu-temp-${t.sensor_name}`, 'temp', 'critical', `GPU ${t.sensor_name}: ${t.temp_celsius}°C — Surchauffe!`);
+            const id = `gpu-temp-${t.sensor_name}`;
+            addAlert(id, 'temp', 'critical', `GPU ${t.sensor_name}: ${t.temp_celsius}°C — Surchauffe!`);
+            currentTempIds.add(id);
           }
         }
       }
-    } catch {}
+      clearResolvedAlerts('temp', currentTempIds);
+    } catch { /* sondage échoué : état inconnu, ne pas toucher aux alertes existantes */ }
 
     try {
       // Vérifier utilisation disques/RAM
       const sysInfo = await invoke<SysInfo>('get_system_info').catch(() => null);
       if (sysInfo) {
+        const currentRamIds = new Set<string>();
         if (sysInfo.ram?.usage_percent >= thresholds.ramUsageWarn) {
           const sev = sysInfo.ram.usage_percent >= 95 ? 'critical' : 'warning';
           addAlert('ram-usage', 'ram', sev, `RAM: ${sysInfo.ram.usage_percent.toFixed(0)}% utilisée`);
+          currentRamIds.add('ram-usage');
         }
+        clearResolvedAlerts('ram', currentRamIds);
+
+        const currentDiskIds = new Set<string>();
         if (sysInfo.disks) {
           for (const d of sysInfo.disks) {
             for (const p of (d.partitions || [])) {
               const label = p.mount_point || d.model || 'Disque';
+              const id = `disk-${label}`;
               if (p.usage_percent >= thresholds.diskUsageCritical) {
-                addAlert(`disk-${label}`, 'disk', 'critical', `Disque ${label}: ${p.usage_percent.toFixed(0)}% plein!`);
+                addAlert(id, 'disk', 'critical', `Disque ${label}: ${p.usage_percent.toFixed(0)}% plein!`);
+                currentDiskIds.add(id);
               } else if (p.usage_percent >= thresholds.diskUsageWarn) {
-                addAlert(`disk-${label}`, 'disk', 'warning', `Disque ${label}: ${p.usage_percent.toFixed(0)}% utilisé`);
+                addAlert(id, 'disk', 'warning', `Disque ${label}: ${p.usage_percent.toFixed(0)}% utilisé`);
+                currentDiskIds.add(id);
               }
             }
           }
         }
+        clearResolvedAlerts('disk', currentDiskIds);
       }
+      // sysInfo null (get_system_info a échoué) : état inconnu, ne rien effacer
     } catch {}
 
     try {
       // Vérifier SMART
-      const smart = await invoke<SmartDiskInfo[]>('get_smart_info').catch(() => []);
+      const smart = await invoke<SmartDiskInfo[]>('get_smart_info');
+      const currentSmartIds = new Set<string>();
       for (const s of smart) {
         if (s.reallocated_sectors > 0) {
-          addAlert(`smart-realloc-${s.name}`, 'smart', 'critical',
+          const id = `smart-realloc-${s.name}`;
+          addAlert(id, 'smart', 'critical',
             `${s.name}: ${s.reallocated_sectors} secteur(s) réalloué(s) — Défaillance imminente!`);
+          currentSmartIds.add(id);
         }
         const healthy = ['ok', 'good', 'passed', 'sain', 'healthy'];
         if (s.health_status && !healthy.some(h => s.health_status.toLowerCase().includes(h))) {
-          addAlert(`smart-health-${s.name}`, 'smart', 'critical', `${s.name}: État SMART dégradé (${s.health_status})`);
+          const id = `smart-health-${s.name}`;
+          addAlert(id, 'smart', 'critical', `${s.name}: État SMART dégradé (${s.health_status})`);
+          currentSmartIds.add(id);
         }
       }
-    } catch {}
+      clearResolvedAlerts('smart', currentSmartIds);
+    } catch { /* sondage échoué : état inconnu, ne pas toucher aux alertes existantes */ }
   }
 
   function start(intervalMs = 60000) {
