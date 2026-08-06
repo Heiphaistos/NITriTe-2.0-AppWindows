@@ -265,6 +265,10 @@ const filteredOpenPorts = () => openPorts.value.filter(p=>!openPortFilter.value|
                 <td style="padding:3px 8px;color:var(--text-secondary)">{{ p.pid }}</td>
                 <td style="padding:3px 8px">{{ p.process }}</td>
               </tr>
+              <!-- v-else-if="openPorts.length" gate laisse la table s'afficher
+                   (en-tetes visibles) meme quand le filtre exclut tout — sans
+                   cette ligne, le corps restait juste vide sans explication. -->
+              <tr v-if="!filteredOpenPorts().length"><td colspan="4" style="padding:8px;color:var(--text-secondary);text-align:center">Aucun port ne correspond au filtre.</td></tr>
             </tbody>
           </table>
         </div>
@@ -314,6 +318,10 @@ const filteredOpenPorts = () => openPorts.value.filter(p=>!openPortFilter.value|
                 <td style="padding:3px 8px;font-size:10px;color:var(--text-secondary);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.interface }}</td>
                 <td style="padding:3px 8px;color:var(--text-secondary)">{{ r.metric }}</td>
               </tr>
+              <!-- v-if="routeTable.length" gate laisse la table s'afficher (en-
+                   tetes visibles) meme quand le filtre exclut tout — sans cette
+                   ligne, le corps restait juste vide sans explication. -->
+              <tr v-if="!filteredRoute().length"><td colspan="5" style="padding:8px;color:var(--text-secondary);text-align:center">Aucune route ne correspond au filtre.</td></tr>
             </tbody>
           </table>
         </div>
