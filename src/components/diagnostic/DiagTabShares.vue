@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@/utils/invoke";
+import type { CommandResult } from "@/types/diagnostic";
 import NBadge from "@/components/ui/NBadge.vue";
 import NSpinner from "@/components/ui/NSpinner.vue";
 import NButton from "@/components/ui/NButton.vue";
@@ -29,12 +30,20 @@ async function disconnectAllSessions() {
   if (!(await confirm("Déconnecter toutes les sessions SMB actives ?", { title: "Nitrite", kind: "warning" }))) return;
   actionLoading.value = true;
   try {
-    await invoke("run_system_command", {
+    // run_system_command ne rejette jamais sur un code de sortie non-nul —
+    // "net session /delete /y" echoue silencieusement sans elevation, sans
+    // verifier .success le message affichait "deconnectees" et la liste
+    // locale etait videe alors que les sessions restaient actives cote serveur.
+    const r = await invoke<CommandResult>("run_system_command", {
       cmd: "cmd",
       args: ["/c", "net session /delete /y"]
     });
-    actionMsg.value = "Sessions SMB déconnectées ✓";
-    setTimeout(() => data.value && (data.value.smb_sessions = []), 500);
+    if (r.success) {
+      actionMsg.value = "Sessions SMB déconnectées ✓";
+      setTimeout(() => data.value && (data.value.smb_sessions = []), 500);
+    } else {
+      actionMsg.value = "Échec : " + (r.stderr || r.stdout || `code ${r.exit_code}`);
+    }
   } catch (e: unknown) {
     actionMsg.value = "Erreur : " + String(e);
   } finally {

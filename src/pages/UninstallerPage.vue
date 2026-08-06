@@ -4,6 +4,7 @@ import { ref, computed, onMounted, defineAsyncComponent } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { csvCell } from "@/composables/useExportData";
 import { invoke } from "@/utils/invoke";
+import type { CommandResult } from "@/types/diagnostic";
 import DiagBanner from "@/components/ui/DiagBanner.vue";
 import NButton from "@/components/ui/NButton.vue";
 const DllScannerTab = defineAsyncComponent(() => import("@/components/uninstaller/DllScannerTab.vue"));
@@ -61,11 +62,18 @@ function toggleRestore() {
 
 async function doCreateRestorePoint() {
   try {
-    await invoke("run_system_command", {
+    // -ErrorAction Stop : Windows ne cree qu'un point de restauration "MODIFY_SETTINGS"
+    // toutes les 24h (throttle documente) — sans ça l'echec sort en exit 0 (faux succès)
+    // et sans verifier .success le toast affichait "créé" meme sur un echec reel.
+    const r = await invoke<CommandResult>("run_system_command", {
       cmd: "powershell",
-      args: ["-Command", "Checkpoint-Computer -Description 'NitritePreUninstall' -RestorePointType 'MODIFY_SETTINGS'"],
+      args: ["-Command", "Checkpoint-Computer -Description 'NitritePreUninstall' -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop"],
     });
-    notify.success("Point de restauration créé", "NitritePreUninstall");
+    if (r.success) {
+      notify.success("Point de restauration créé", "NitritePreUninstall");
+    } else {
+      notify.warning("Point de restauration", (r.stderr || r.stdout || "Échec — un point a peut-être déjà été créé dans les dernières 24h").slice(0, 160));
+    }
   } catch {
     notify.warning("Point de restauration", "Impossible de créer (droits admin requis ?)");
   }
@@ -129,13 +137,21 @@ async function confirmForceRemove() {
     return;
   }
   try {
-    await invoke("run_system_command", {
+    // -ErrorAction Stop (pas SilentlyContinue) + verification .success : sans ça
+    // une clé verrouillée/protégée échouait silencieusement (exit 0) tout en
+    // affichant "retiré du registre" ET en faisant disparaître l'app de la liste
+    // alors que sa clé registre restait bien présente — plus rattrapable ensuite.
+    const r = await invoke<CommandResult>("run_system_command", {
       cmd: "powershell",
-      args: ["-Command", `Remove-Item -LiteralPath '${regPath}' -Recurse -Force -ErrorAction SilentlyContinue`],
+      args: ["-Command", `Remove-Item -LiteralPath '${regPath}' -Recurse -Force -ErrorAction Stop`],
     });
-    notify.success("Suppression forcée", `${app.name} retiré du registre`);
-    apps.value = apps.value.filter(a => appId(a) !== appId(app));
-    saveLastUninstall(app.name);
+    if (r.success) {
+      notify.success("Suppression forcée", `${app.name} retiré du registre`);
+      apps.value = apps.value.filter(a => appId(a) !== appId(app));
+      saveLastUninstall(app.name);
+    } else {
+      notify.error("Suppression forcée échouée", (r.stderr || r.stdout || `code ${r.exit_code}`).slice(0, 160));
+    }
   } catch (e: unknown) {
     notify.error("Suppression forcée échouée", String(e));
   }

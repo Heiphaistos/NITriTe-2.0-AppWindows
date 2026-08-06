@@ -202,8 +202,12 @@ async function pruneImages() {
     const result = await invoke<CommandResult>("run_system_command", {
       cmd: "docker", args: ["image", "prune", "-f"],
     });
-    notify.success("Nettoyage OK", (result?.stdout ?? "").trim().slice(0, 80) || "Images orphelines supprimees");
-    await load();
+    if (result.success) {
+      notify.success("Nettoyage OK", (result.stdout ?? "").trim().slice(0, 80) || "Images orphelines supprimees");
+      await load();
+    } else {
+      notify.error("Échec du nettoyage", (result.stderr || result.stdout || `code ${result.exit_code}`).trim().slice(0, 120));
+    }
   } catch (e: unknown) {
     notify.error("Erreur prune", String(e));
   } finally {
@@ -216,9 +220,13 @@ async function pruneVolumes() {
   if (!(await confirm("Supprimer tous les volumes inutilises ? Cette action est irreversible.", { title: "Nitrite", kind: "warning" }))) return;
   pruneVolLoading.value = true;
   try {
-    await invoke<CommandResult>("run_system_command", { cmd: "docker", args: ["volume", "prune", "-f"] });
-    notify.success("Volumes pruned", "Volumes inutilises supprimes");
-    await loadVolumes();
+    const result = await invoke<CommandResult>("run_system_command", { cmd: "docker", args: ["volume", "prune", "-f"] });
+    if (result.success) {
+      notify.success("Volumes pruned", "Volumes inutilises supprimes");
+      await loadVolumes();
+    } else {
+      notify.error("Échec du prune", (result.stderr || result.stdout || `code ${result.exit_code}`).trim().slice(0, 120));
+    }
   } catch (e: unknown) {
     notify.error("Erreur prune volumes", String(e));
   } finally {
