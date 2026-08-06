@@ -188,4 +188,13 @@ function healthVariant(h: string) {
       </NCollapse>
     </div>
   </template>
+  <!-- get_logical_volumes ne filtre que les volumes ayant une lettre de lecteur
+       assignée (system/extra.rs::collect_volumes) — sur une machine Windows
+       réelle il en existe toujours au moins un (le lecteur système), donc un
+       résultat vide signale presque toujours un échec de chargement plutôt
+       qu'une absence légitime, contrairement au silence total qu'affichait
+       cette section jusqu'ici. -->
+  <div v-else-if="tab === 'disks'" class="diag-tab-content diag-empty" style="padding-top:0">
+    Aucun volume avec lettre de lecteur détecté — le chargement a peut-être échoué.
+  </div>
 </template>
