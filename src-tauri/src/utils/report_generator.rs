@@ -71,16 +71,16 @@ td:last-child {{ color: #e4e4e7; font-family: monospace; font-size: 12px; }}
 pub fn generate_md_report(data: ReportData) -> String {
     let mut md = format!(
         "# {}\n\n_Généré le {} — NiTriTe_\n\n---\n\n",
-        data.title, data.generated_at
+        md_escape(&data.title), md_escape(&data.generated_at)
     );
 
     for section in &data.sections {
-        md.push_str(&format!("## {}\n\n", section.title));
+        md.push_str(&format!("## {}\n\n", md_escape(&section.title)));
         md.push_str("| Propriété | Valeur |\n|---|---|\n");
         for row in &section.rows {
             let label = row.first().map(|s| s.as_str()).unwrap_or("");
             let value = row.get(1).map(|s| s.as_str()).unwrap_or("");
-            md.push_str(&format!("| {} | {} |\n", label, value));
+            md.push_str(&format!("| {} | {} |\n", md_escape(label), md_escape(value)));
         }
         md.push('\n');
     }
@@ -93,6 +93,22 @@ fn html_escape(s: &str) -> String {
      .replace('<', "&lt;")
      .replace('>', "&gt;")
      .replace('"', "&quot;")
+}
+
+/// generate_html_report échappe déjà `title`/`label`/`value` (html_escape, testé
+/// ci-dessous) mais sa fonction sœur generate_md_report n'échappait rien du tout —
+/// un `|` non échappé dans une valeur de diagnostic (chemin, commande, description
+/// de service...) casse la structure du tableau Markdown (colonne supplémentaire
+/// injectée), et un HTML brut non échappé survit tel quel dans la plupart des
+/// convertisseurs Markdown→HTML (XSS si ce .md est un jour rendu). `\` doit être
+/// échappé en premier pour ne pas doubler l'échappement du `\|` qu'on insère ensuite.
+fn md_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+     .replace('|', "\\|")
+     .replace('<', "&lt;")
+     .replace('>', "&gt;")
+     .replace('\r', "")
+     .replace('\n', " ")
 }
 
 #[cfg(test)]
@@ -197,5 +213,70 @@ mod tests {
         assert!(md.starts_with("# Diagnostic"));
         assert!(md.contains("## Réseau"));
         assert!(md.contains("| IP | 192.168.1.1 |"));
+    }
+
+    #[test]
+    fn md_escape_pipe() {
+        assert_eq!(md_escape("a|b"), "a\\|b");
+    }
+
+    #[test]
+    fn md_escape_backslash_before_pipe_no_double_escape() {
+        // Le \ doit être échappé en premier, sinon le \| inséré pour le pipe
+        // serait lui-même ré-échappé en \\| par un remplacement ultérieur du \.
+        assert_eq!(md_escape("a\\|b"), "a\\\\\\|b");
+    }
+
+    #[test]
+    fn md_escape_newline_becomes_space() {
+        assert_eq!(md_escape("line1\nline2"), "line1 line2");
+    }
+
+    #[test]
+    fn md_escape_angle_brackets() {
+        assert_eq!(md_escape("<script>"), "&lt;script&gt;");
+    }
+
+    #[test]
+    fn generate_md_report_pipe_in_value_does_not_break_table_structure() {
+        let data = ReportData {
+            title: "Test".to_string(),
+            generated_at: "now".to_string(),
+            sections: vec![ReportSection {
+                title: "Section".to_string(),
+                rows: vec![vec!["Cmd".to_string(), "cmd.exe /c dir | more".to_string()]],
+            }],
+        };
+        let md = generate_md_report(data);
+        // Repro cycle 158 : un pipe non échappé produisait "| Cmd | cmd.exe /c dir | more |"
+        // (4 segments -> colonne fantôme), au lieu d'une seule ligne à 2 colonnes.
+        assert!(md.contains("| Cmd | cmd.exe /c dir \\| more |"));
+        assert!(!md.contains("dir | more"));
+    }
+
+    #[test]
+    fn generate_md_report_row_value_html_escaped() {
+        let data = ReportData {
+            title: "Test".to_string(),
+            generated_at: "now".to_string(),
+            sections: vec![ReportSection {
+                title: "Section".to_string(),
+                rows: vec![vec!["Key".to_string(), "<img src=x onerror=alert(1)>".to_string()]],
+            }],
+        };
+        let md = generate_md_report(data);
+        assert!(!md.contains("<img"));
+        assert!(md.contains("&lt;img"));
+    }
+
+    #[test]
+    fn generate_md_report_title_with_newline_does_not_inject_extra_heading() {
+        let data = ReportData {
+            title: "Test\n# Fake Heading".to_string(),
+            generated_at: "now".to_string(),
+            sections: vec![],
+        };
+        let md = generate_md_report(data);
+        assert!(!md.contains("\n# Fake Heading"));
     }
 }
