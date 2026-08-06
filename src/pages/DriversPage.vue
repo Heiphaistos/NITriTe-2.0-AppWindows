@@ -555,7 +555,10 @@ onMounted(() => {
                     </td>
                   </tr>
                   <tr v-if="filteredDrivers.length === 0">
-                    <td colspan="7" class="empty-row">Aucun pilote dans cette categorie</td>
+                    <!-- run_system_command resout meme si driverquery echoue reellement
+                         (exit non-zero) : pas d'exception, pas de toast, juste une liste
+                         vide — distinguer ce cas d'un simple filtre/recherche sans match. -->
+                    <td colspan="7" class="empty-row">{{ drivers.length === 0 ? 'Aucun pilote chargé — le chargement a peut-être échoué, cliquez sur "Rafraichir".' : 'Aucun pilote dans cette categorie' }}</td>
                   </tr>
                 </tbody>
               </table>
