@@ -258,7 +258,13 @@ function errLabel(code: number) {
         </div>
 
         <!-- Liste des périphériques -->
-        <div style="max-height:260px;overflow-y:auto">
+        <!-- Sans ce message, une recherche/filtre ne matchant rien laissait
+             juste cette zone vide sans aucune explication (devices.length > 0
+             mais filteredDevices.length === 0). -->
+        <div v-if="!filteredDevices.length" style="font-size:12px;color:var(--text-secondary);padding:8px 0">
+          Aucun périphérique ne correspond à la recherche/au filtre.
+        </div>
+        <div v-else style="max-height:260px;overflow-y:auto">
           <div v-for="d in filteredDevices.slice(0,200)" :key="d.device_id"
             style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--border)"
             :style="{background:d.has_driver_problem?'rgba(239,68,68,0.04)':''}">
