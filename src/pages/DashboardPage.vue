@@ -12,6 +12,7 @@ import NButton from "@/components/ui/NButton.vue";
 import NProgress from "@/components/ui/NProgress.vue";
 import NBadge from "@/components/ui/NBadge.vue";
 import AlertThresholdsModal, { type AlertThresholds } from "@/components/ui/AlertThresholdsModal.vue";
+import { normalizeThresholds } from "@/utils/alertThresholds";
 import type { SystemMonitorPayload, SysInfo, AppLogEntry, SystemHistory } from "@/types/diagnostic";
 import {
   Cpu, MemoryStick, HardDrive, Wifi,
@@ -45,7 +46,9 @@ const showThresholdModal = ref(false);
 function loadThresholds() {
   try {
     const s = localStorage.getItem("nitrite_alert_thresholds");
-    if (s) thresholds.value = { ...thresholds.value, ...JSON.parse(s) };
+    // normalizeThresholds() : filet de sécurité pour une valeur déjà persistée
+    // par une version antérieure au fix (seuil critique < avertissement).
+    if (s) thresholds.value = normalizeThresholds({ ...thresholds.value, ...JSON.parse(s) }, thresholds.value);
   } catch { /* ignore */ }
 }
 

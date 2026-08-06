@@ -3,6 +3,7 @@ import { ref, watch } from "vue";
 import NModal from "./NModal.vue";
 import NButton from "./NButton.vue";
 import { Cpu, MemoryStick, HardDrive } from "lucide-vue-next";
+import { normalizeThresholds } from "@/utils/alertThresholds";
 
 export interface AlertThresholds {
   cpu_warn: number;
@@ -23,8 +24,9 @@ const draft = ref<AlertThresholds>({ ...props.modelValue });
 watch(() => props.open, (v) => { if (v) draft.value = { ...props.modelValue }; });
 
 function save() {
-  emit("update:modelValue", { ...draft.value });
-  try { localStorage.setItem("nitrite_alert_thresholds", JSON.stringify(draft.value)); } catch { /* ignore */ }
+  const normalized = normalizeThresholds(draft.value, props.modelValue);
+  emit("update:modelValue", normalized);
+  try { localStorage.setItem("nitrite_alert_thresholds", JSON.stringify(normalized)); } catch { /* ignore */ }
   emit("close");
 }
 </script>
