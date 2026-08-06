@@ -362,6 +362,18 @@ function exportHistory() {
           </div>
         </div>
       </NCard>
+      <!-- get_top_processes_by_cpu() renvoie un Vec brut (pas de Result) : un
+           echec interne PS/JSON retombe silencieusement sur [] sans exception ni
+           toast (meme defaut deja corrige dans DiagTabPerfHistory.vue, cycle 116).
+           history et topProcs se resolvent ensemble dans le meme Promise.all, donc
+           si history est deja affiche, topProcs vide est definitif — sans ce
+           v-else, toute la carte "Top processus" disparaissait sans explication. -->
+      <NCard v-else>
+        <template #header>
+          <div class="section-header"><Trophy :size="14" /><span>Top processus</span></div>
+        </template>
+        <p style="font-size:12px;color:var(--text-muted);padding:8px 0">Aucun processus détecté. Relancez l'analyse pour réessayer.</p>
+      </NCard>
     </template>
   </div>
 </template>
