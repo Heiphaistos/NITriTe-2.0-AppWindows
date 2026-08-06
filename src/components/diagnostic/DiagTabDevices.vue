@@ -83,16 +83,19 @@ async function setDefaultPrinter(printerName: string) {
 }
 
 async function openDeviceManager() {
+  // "mmc devmgmt.msc" lancé directement (sans cmd/start) reste un vrai process
+  // tant que la fenêtre Gestionnaire de périphériques est ouverte — vérifié en
+  // direct (mmc.exe encore vivant après 5s, contrairement à explorer.exe qui
+  // relaie au shell et sort en <300ms). execute_system_command attend ce process
+  // avec un timeout fixe de 60s puis le tue de force (taskkill /F) : le bouton
+  // restait silencieux jusqu'à 60s pendant l'usage normal, fermait le
+  // Gestionnaire déjà ouvert sous l'utilisateur, avant de rouvrir en silence via
+  // le fallback. "cmd /c start" (déjà présent en repli) ne bloque jamais.
   try {
-    await invoke("run_system_command", { cmd: "mmc", args: ["devmgmt.msc"] });
+    await invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "devmgmt.msc"] });
     showMsg("Gestionnaire de périphériques ouvert !");
-  } catch {
-    try {
-      await invoke("run_system_command", { cmd: "cmd", args: ["/c", "start", "devmgmt.msc"] });
-      showMsg("Gestionnaire de périphériques ouvert !");
-    } catch (e: unknown) {
-      showMsg((e instanceof Error ? e.message : String(e)) || "Erreur ouverture gestionnaire", true);
-    }
+  } catch (e: unknown) {
+    showMsg((e instanceof Error ? e.message : String(e)) || "Erreur ouverture gestionnaire", true);
   }
 }
 
