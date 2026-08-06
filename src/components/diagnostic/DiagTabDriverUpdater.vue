@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { invokeRaw as invoke, isTauriContext } from "@/utils/invoke";
-import type { DriverInstallResult } from "@/types/diagnostic";
+import type { DriverInstallResult, CommandResult } from "@/types/diagnostic";
 import { useNotificationStore } from "@/stores/notifications";
 import { sdiAcquire, sdiRelease } from "@/utils/sdiGuard";
 const notify = useNotificationStore();
@@ -80,8 +80,22 @@ async function chooseSdiLocation() {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const result = await open({ title: "Sélectionner SDI.exe", filters: [{ name: "Exécutable", extensions: ["exe"] }] });
     if (result && typeof result === "string") {
-      await invoke("run_system_command", { cmd: result, args: [] });
-      notify.success("SDI lancé !", result);
+      // Lancer SDI.exe directement en cmd (comme avant) fait attendre
+      // execute_system_command sur la fin du process (wait_with_output) — SDI est un
+      // outil GUI interactif qui tourne typiquement plusieurs minutes, donc le timeout
+      // fixe de 60s de run_system_command le tuait de force (taskkill /F) en pleine
+      // utilisation. Start-Process (même pattern que launch_sdi() côté backend pour le
+      // SDI embarqué) lance le process en arrière-plan sans jamais attendre sa fermeture.
+      const escaped = result.replace(/'/g, "''");
+      const r = await invoke<CommandResult>("run_system_command", {
+        cmd: "powershell",
+        args: ["-NoProfile", "-WindowStyle", "Hidden", "-Command", `Start-Process -FilePath '${escaped}'`],
+      });
+      if (r.success) {
+        notify.success("SDI lancé !", result);
+      } else {
+        notify.error("Erreur lancement SDI", r.stderr || r.stdout || `code ${r.exit_code}`);
+      }
     }
   } catch (e: unknown) {
     notify.error("Erreur lancement SDI", String(e));

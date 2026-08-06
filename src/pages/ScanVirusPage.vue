@@ -110,7 +110,12 @@ async function checkDefenderStatus() {
       cmd: "powershell",
       args: ["-Command", "Get-MpComputerStatus | Select-Object -ExpandProperty RealTimeProtectionEnabled"],
     });
-    const out = (result?.stdout ?? "").trim();
+    // run_system_command ne rejette jamais sur un échec réel (Get-MpComputerStatus
+    // refuse sur certaines éditions Windows, accès refusé...) — sans vérifier
+    // .success, une sortie vide sur échec était interprétée comme "Inactive"
+    // (un faux négatif sur un statut de sécurité, pire qu'un état "inconnu" honnête).
+    if (!result.success) { defenderStatus.value = "unknown"; return; }
+    const out = (result.stdout ?? "").trim();
     defenderStatus.value = out.toLowerCase().includes("true") ? "active" : "inactive";
   } catch {
     defenderStatus.value = "unknown";

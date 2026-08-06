@@ -111,3 +111,32 @@ pub fn run_dism_restore() -> Result<CommandResult, NiTriTeError> {
 pub fn list_drivers() -> Result<CommandResult, NiTriTeError> {
     execute_system_command("driverquery", &["/v", "/fo", "csv"], 30)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Prouve le mecanisme exploite par le bug DiagTabDriverUpdater.vue::chooseSdiLocation :
+    /// execute_system_command ATTEND la fin du process (wait_with_output), et au-dela du
+    /// timeout le tue de force (taskkill /F) plutot que de simplement abandonner l'attente.
+    /// Lancer un executable GUI interactif long (comme SDI.exe) directement via cette
+    /// fonction — au lieu de Start-Process fire-and-forget — le ferait donc tuer de force
+    /// apres le timeout, meme en pleine utilisation par l'utilisateur.
+    #[test]
+    #[ignore] // lance un vrai process powershell, à exécuter manuellement (--ignored)
+    fn execute_system_command_kills_process_on_timeout() {
+        let start = std::time::Instant::now();
+        let result = execute_system_command(
+            "powershell",
+            &["-NoProfile", "-Command", "Start-Sleep -Seconds 30"],
+            2, // timeout volontairement plus court que le sleep de 30s
+        );
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "un process encore vivant après le timeout doit renvoyer une erreur, pas un faux succès");
+        assert!(matches!(result, Err(NiTriTeError::Timeout(_))));
+        // La fonction ne doit pas attendre les 30s complètes du sleep : le timeout
+        // + taskkill doivent interrompre l'attente bien avant.
+        assert!(elapsed.as_secs() < 10, "execute_system_command a attendu {}s, le taskkill sur timeout ne fonctionne pas", elapsed.as_secs());
+    }
+}
