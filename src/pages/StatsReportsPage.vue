@@ -41,14 +41,38 @@ const stats = ref<SysStats>({
 const thresholds = ref<Thresholds>({ cpu: 80, ram: 80, disk: 85 });
 const showThresholdPanel = ref(false);
 
+// clampThreshold() : les attributs HTML min="1"/max="100" des <input type="number">
+// ne sont que décoratifs — v-model.number ne les applique jamais. Un seuil
+// sauvegardé à 0 (champ vidé par erreur, ou juste tapé "0") rend exceeds(valeur, 0)
+// TOUJOURS vrai (une utilisation ne peut jamais être < 0%), affichant une fausse
+// alerte "dépassement" en permanence même à 0% d'usage réel — même famille de bug
+// que AlertThresholdsModal.vue (cycle 133), racine commune : bornes HTML jamais
+// vérifiées côté JS.
+function clampThreshold(n: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(100, Math.max(1, Math.round(n)));
+}
+
 function loadThresholds() {
   try {
     const raw = localStorage.getItem(STORAGE_THRESHOLDS);
-    if (raw) thresholds.value = { ...thresholds.value, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = { ...thresholds.value, ...JSON.parse(raw) };
+      thresholds.value = {
+        cpu: clampThreshold(parsed.cpu, thresholds.value.cpu),
+        ram: clampThreshold(parsed.ram, thresholds.value.ram),
+        disk: clampThreshold(parsed.disk, thresholds.value.disk),
+      };
+    }
   } catch { /* keep defaults */ }
 }
 
 function saveThresholds() {
+  thresholds.value = {
+    cpu: clampThreshold(thresholds.value.cpu, 80),
+    ram: clampThreshold(thresholds.value.ram, 80),
+    disk: clampThreshold(thresholds.value.disk, 85),
+  };
   localStorage.setItem(STORAGE_THRESHOLDS, JSON.stringify(thresholds.value));
   notifications.success("Seuils sauvegardés", "");
 }
