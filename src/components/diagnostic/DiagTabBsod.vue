@@ -119,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 import { invoke } from "@/utils/invoke";
 import { cachedInvoke } from '@/composables/useCachedInvoke'
 import { useExportData } from '@/composables/useExportData'
@@ -174,7 +174,14 @@ interface BsodReport { entries: BsodEntry[]; total_count: number; last_bsod: str
 
 const loading = ref(false); const report = ref<BsodReport | null>(null)
 const selected = ref<number | null>(null); const lookupCode = ref(''); const lookupResult = ref('')
-const descCache: Record<string, string> = {}
+// reactive(), pas un objet brut : getDescSync() est appelée directement dans le
+// template ({{ getDescSync(...) }}) et mute ce cache une fois la description
+// arrivée en arrière-plan — sur un objet brut, cette mutation est invisible pour
+// Vue (aucune dépendance réactive suivie), donc rien ne déclenche de nouveau
+// rendu : le texte restait bloqué sur "Chargement..." indéfiniment même après
+// une récupération réussie, sauf si un événement totalement indépendant
+// (sélection d'une autre entrée, etc.) provoquait un re-rendu par coïncidence.
+const descCache = reactive<Record<string, string>>({})
 
 async function load() {
   loading.value = true
