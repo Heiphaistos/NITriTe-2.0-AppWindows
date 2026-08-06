@@ -283,13 +283,20 @@ pub async fn get_installed_software() -> Result<Vec<InstalledSoftware>, String> 
     tokio::task::spawn_blocking(|| {
         #[cfg(target_os = "windows")]
         {
+            // InstallDate registre est un "yyyyMMdd" brut (ex: "20260802") — reformaté
+            // en "yyyy-MM-dd" avant sérialisation, sinon DiagTabSoftware.vue et les
+            // exports (useDiagnosticExport.ts) affichent un nombre illisible à la
+            // place d'une date (même correctif que sys_history.rs::RecentInstalls,
+            // même donnée registre consommée par une page différente).
             let out = std::process::Command::new("powershell")
                 .args(["-NoProfile", "-NonInteractive", "-Command",
                     "$OutputEncoding=[System.Text.Encoding]::UTF8;[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;\
                      Get-ItemProperty 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',\
                      'HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' 2>$null |\
                      Where-Object { $_.DisplayName } |\
-                     Select-Object DisplayName,DisplayVersion,Publisher,InstallDate,InstallLocation,EstimatedSize |\
+                     Select-Object DisplayName,DisplayVersion,Publisher,@{Name='InstallDate';Expression={\
+                       if ($_.InstallDate -match '^(\\d{4})(\\d{2})(\\d{2})$') { \"$($matches[1])-$($matches[2])-$($matches[3])\" } else { $_.InstallDate }\
+                     }},InstallLocation,EstimatedSize |\
                      Sort-Object DisplayName | ConvertTo-Json -Compress"
                 ])
                 .creation_flags(0x08000000).output().map_err(|e| e.to_string())?;
