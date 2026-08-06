@@ -282,7 +282,11 @@ export async function exportScanTxt(
 
   if (sr.scan_errors?.length) {
     lines.push(sec(`ERREURS DE SCAN (${sr.scan_errors.length})`), THIN);
-    for (const e of sr.scan_errors) lines.push(`  !! ${e}`);
+    // Un \n brut dans l'erreur (exception PowerShell/WMI multi-ligne) injectait
+    // des lignes non préfixées "!!" dans le rapport, pouvant visuellement usurper
+    // un en-tête de section — même garde déjà appliquée juste au-dessus pour
+    // recent_errors.message, manquait ici pour ce champ jumeau.
+    for (const e of sr.scan_errors) lines.push(`  !! ${e.replace(/\r?\n/g, " ")}`);
     lines.push("");
   }
 

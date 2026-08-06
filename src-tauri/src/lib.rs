@@ -111,7 +111,7 @@ pub fn run() {
     utils::logger::init_logger();
     logging::init_log_dir();
     logging::log_internal("INFO", "SYSTEM", "NiTriTe démarré — init logging", None);
-    tracing::info!("Demarrage NiTriTe 8.207.0");
+    tracing::info!("Demarrage NiTriTe 8.208.0");
 
     let config = AppConfig::load();
     let app_state = AppState::new(config);
