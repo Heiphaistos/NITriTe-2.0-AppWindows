@@ -27,7 +27,24 @@ pub async fn chat(
         .send()
         .await
         .map_err(|e| NiTriTeError::OllamaUnavailable(e.to_string()))?;
+    // Le status doit être vérifié AVANT de parser le corps : Ollama renvoie un
+    // JSON valide ({"error": "..."}) même sur 404/500 (ex: modèle inconnu),
+    // donc resp.json() réussirait quand même — sans ce check, parse_chat_response
+    // ne trouve ni "message.content" ni "response" dans un corps d'erreur et
+    // retombe sur unwrap_or("") des deux côtés, renvoyant Ok("") : un faux succès
+    // qui affichait une bulle de chat vide au lieu du vrai message d'erreur
+    // Ollama (ex: "model 'xyz' not found"), contournant complètement le système
+    // de messages d'erreur déjà en place côté frontend (AiAgentsPage.vue).
+    let status = resp.status();
     let result: serde_json::Value = resp.json().await?;
+    parse_chat_response(status, result)
+}
+
+fn parse_chat_response(status: reqwest::StatusCode, result: serde_json::Value) -> Result<String, NiTriTeError> {
+    if !status.is_success() {
+        let detail = result["error"].as_str().unwrap_or("réponse sans détail").to_string();
+        return Err(NiTriTeError::OllamaUnavailable(format!("Ollama a renvoyé une erreur ({status}) : {detail}")));
+    }
     // /api/chat returns {"message": {"role": "assistant", "content": "..."}}
     let content = result["message"]["content"].as_str().unwrap_or("").to_string();
     if content.is_empty() {
@@ -35,6 +52,43 @@ pub async fn chat(
         Ok(result["response"].as_str().unwrap_or("").to_string())
     } else {
         Ok(content)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_chat_response_extracts_message_content_on_success() {
+        let body = serde_json::json!({"message": {"role": "assistant", "content": "Bonjour"}});
+        let r = parse_chat_response(reqwest::StatusCode::OK, body).unwrap();
+        assert_eq!(r, "Bonjour");
+    }
+
+    #[test]
+    fn parse_chat_response_falls_back_to_response_field() {
+        let body = serde_json::json!({"response": "Bonjour via generate"});
+        let r = parse_chat_response(reqwest::StatusCode::OK, body).unwrap();
+        assert_eq!(r, "Bonjour via generate");
+    }
+
+    #[test]
+    fn parse_chat_response_errors_on_non_success_status_instead_of_returning_empty_ok() {
+        // Format d'erreur réel documenté par l'API Ollama (404 modèle inconnu).
+        // Reproduit le bug : sans le check de status, ce corps ne contient ni
+        // message.content ni response, donc l'ancien code renvoyait Ok("").
+        let body = serde_json::json!({"error": "model 'xyz' not found, try pulling it first"});
+        let r = parse_chat_response(reqwest::StatusCode::NOT_FOUND, body);
+        assert!(r.is_err(), "un status non-succès doit produire une Err, jamais un Ok(\"\") silencieux");
+        assert!(format!("{}", r.unwrap_err()).contains("not found"));
+    }
+
+    #[test]
+    fn parse_chat_response_errors_on_server_error_status_even_with_valid_json() {
+        let body = serde_json::json!({"error": "internal server error"});
+        let r = parse_chat_response(reqwest::StatusCode::INTERNAL_SERVER_ERROR, body);
+        assert!(r.is_err());
     }
 }
 
