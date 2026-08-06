@@ -200,10 +200,17 @@ function exportInterfaces() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+// Divise par 1024 (binaire), pas 1000 (décimal) : cohérent avec les ~15 autres
+// formatSize/formatBytes de l'app (BigFilesFinderPage, DiskVisualizerPage,
+// DuplicateFinderPage, HashCheckerPage…) et avec l'Explorateur/Gestionnaire des
+// tâches Windows. L'ancien calcul décimal affichait un nombre différent pour le
+// même volume de données réel (ex: 5 GiB reçus → "5.37 GB" ici mais "5.00 GB"
+// partout ailleurs dans l'app), une incohérence silencieuse entre pages.
 function formatBytes(b: number) {
-  if (b > 1e9) return (b / 1e9).toFixed(2) + " GB";
-  if (b > 1e6) return (b / 1e6).toFixed(1) + " MB";
-  return (b / 1e3).toFixed(0) + " KB";
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 ** 2) return (b / 1024).toFixed(0) + " KB";
+  if (b < 1024 ** 3) return (b / 1024 ** 2).toFixed(1) + " MB";
+  return (b / 1024 ** 3).toFixed(2) + " GB";
 }
 
 function stateVariant(s: string) {
