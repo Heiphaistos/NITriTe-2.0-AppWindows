@@ -1,4 +1,4 @@
-import { invoke, invokeRaw, useNotificationStore, fullRegPath, type Solution } from "./scanExportHelpers";
+import { invoke, invokeRaw, useNotificationStore, fullRegPath, oneLine, type Solution } from "./scanExportHelpers";
 import type { ScanResult, BatteryDetailed } from "@/types/diagnostic";
 
 export async function exportScanTxt(
@@ -183,11 +183,11 @@ export async function exportScanTxt(
     lines.push(sec("TOP PROCESSUS (snapshot)"), THIN);
     if (sr.top_cpu?.length) {
       lines.push("  CPU :");
-      for (const p of sr.top_cpu) lines.push(`    [${String(p.pid).padEnd(6)}] ${p.name.padEnd(32)} ${p.value}s CPU`);
+      for (const p of sr.top_cpu) lines.push(`    [${String(p.pid).padEnd(6)}] ${oneLine(p.name).padEnd(32)} ${p.value}s CPU`);
     }
     if (sr.top_ram?.length) {
       lines.push("  RAM :");
-      for (const p of sr.top_ram) lines.push(`    [${String(p.pid).padEnd(6)}] ${p.name.padEnd(32)} ${p.value} MB`);
+      for (const p of sr.top_ram) lines.push(`    [${String(p.pid).padEnd(6)}] ${oneLine(p.name).padEnd(32)} ${p.value} MB`);
     }
     lines.push("");
   }
@@ -225,8 +225,8 @@ export async function exportScanTxt(
   if (sr.wmi_subscription_details?.length) {
     lines.push("  Details abonnements WMI :");
     for (const sub of sr.wmi_subscription_details) {
-      lines.push(`    [${sub.consumer_type}] ${sub.name || "(sans nom)"}`);
-      lines.push(`      Chemin : ${sub.path}`);
+      lines.push(`    [${oneLine(sub.consumer_type)}] ${oneLine(sub.name || "(sans nom)")}`);
+      lines.push(`      Chemin : ${oneLine(sub.path)}`);
     }
   }
   lines.push("");
@@ -234,9 +234,9 @@ export async function exportScanTxt(
   if (sr.suspicious_processes?.length) {
     lines.push(sec(`PROCESSUS HORS CHEMINS SECURISES (${sr.suspicious_processes.length})`), THIN);
     for (const p of sr.suspicious_processes) {
-      lines.push(`  [PID ${p.pid}] ${p.name}`);
-      lines.push(`           Raison : ${p.reason}`);
-      lines.push(`           Chemin : ${p.path}`);
+      lines.push(`  [PID ${p.pid}] ${oneLine(p.name)}`);
+      lines.push(`           Raison : ${oneLine(p.reason)}`);
+      lines.push(`           Chemin : ${oneLine(p.path)}`);
     }
     lines.push("");
   }
@@ -244,9 +244,9 @@ export async function exportScanTxt(
   if (sr.suspicious_services?.length) {
     lines.push(sec(`SERVICES TIERS ACTIFS (${sr.suspicious_services.length})`), THIN);
     for (const s of sr.suspicious_services.slice(0, 15)) {
-      lines.push(`  ${s.name}  (${s.state})`);
-      lines.push(`    ${s.display_name}`);
-      lines.push(`    ${s.path}`);
+      lines.push(`  ${oneLine(s.name)}  (${oneLine(s.state)})`);
+      lines.push(`    ${oneLine(s.display_name)}`);
+      lines.push(`    ${oneLine(s.path)}`);
     }
     lines.push("");
   }
@@ -254,9 +254,9 @@ export async function exportScanTxt(
   if (sr.autorun_entries?.length) {
     lines.push(sec(`ENTREES AUTORUN TIERS (${sr.autorun_entries.length})`), THIN);
     for (const a of sr.autorun_entries.slice(0, 25)) {
-      lines.push(`  ${a.name.padEnd(36)} [${a.location}]`);
-      lines.push(`    Exec   : ${a.path}`);
-      lines.push(`    RegKey : ${fullRegPath(a.location, a.name)}`);
+      lines.push(`  ${oneLine(a.name).padEnd(36)} [${oneLine(a.location)}]`);
+      lines.push(`    Exec   : ${oneLine(a.path)}`);
+      lines.push(`    RegKey : ${oneLine(fullRegPath(a.location, a.name))}`);
     }
     lines.push("");
   }
@@ -264,8 +264,8 @@ export async function exportScanTxt(
   if (sr.susp_tasks?.length) {
     lines.push(sec(`TACHES PLANIFIEES SUSPECTES (${sr.susp_tasks_count})`), THIN);
     for (const t of sr.susp_tasks) {
-      lines.push(`  ${t.name}  (${t.path})`);
-      lines.push(`    Executable : ${t.exec}`);
+      lines.push(`  ${oneLine(t.name)}  (${oneLine(t.path)})`);
+      lines.push(`    Executable : ${oneLine(t.exec)}`);
     }
     lines.push("");
   }

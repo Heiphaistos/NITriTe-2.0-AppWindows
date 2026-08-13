@@ -28,6 +28,16 @@ export function mdCell(s: unknown): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Aplati une valeur non fiable (nom de process/service/autorun, chemin/nom
+ * WMI, etc.) sur une seule ligne pour un rapport TXT à alignement fixe : un
+ * `\n` brut injecterait des lignes non préfixées pouvant usurper un en-tête de
+ * section. Équivalent TXT du strip de `mdCell` (qui protège déjà l'export MD).
+ */
+export function oneLine(s: unknown): string {
+  return String(s ?? "").replace(/\r?\n/g, " ");
+}
+
 export function fullRegPath(location: string, name?: string): string {
   let p = location
     .replace(/^HKCU(\\|$)/, "HKEY_CURRENT_USER$1")

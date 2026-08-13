@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { kbStr, fullRegPath, mdCell } from "@/composables/scan/scanExportHelpers";
+import { kbStr, fullRegPath, mdCell, oneLine } from "@/composables/scan/scanExportHelpers";
 
 describe("kbStr", () => {
   it("valeur < 1024 → affiche KB", () => {
@@ -94,5 +94,26 @@ describe("mdCell", () => {
     expect(escaped).not.toContain("`Get-WmiObject`");
     expect(escaped).not.toContain(" | pipe");
     expect(escaped).toBe("exception in 'Get-WmiObject' call \\| pipe-and-backtick");
+  });
+});
+
+describe("oneLine", () => {
+  it("aplati les retours à la ligne (LF et CRLF) sur une seule ligne", () => {
+    expect(oneLine("a\nb")).toBe("a b");
+    expect(oneLine("a\r\nb")).toBe("a b");
+    expect(oneLine("a\nb\r\nc")).toBe("a b c");
+  });
+
+  it("empêche un nom d'autorun malveillant d'usurper un en-tête de section TXT", () => {
+    // Un \n embarqué dans un nom d'entité (registre/WMI accepte n'importe quel
+    // Unicode) injecterait sinon une fausse ligne "=== FIN ===" dans le rapport.
+    const evil = "Updater\n============  FIN DU RAPPORT  ============";
+    expect(oneLine(evil)).not.toContain("\n");
+    expect(oneLine(evil)).toBe("Updater ============  FIN DU RAPPORT  ============");
+  });
+
+  it("gère null/undefined sans lever", () => {
+    expect(oneLine(null)).toBe("");
+    expect(oneLine(undefined)).toBe("");
   });
 });
