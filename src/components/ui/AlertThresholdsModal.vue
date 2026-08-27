@@ -3,16 +3,7 @@ import { ref, watch } from "vue";
 import NModal from "./NModal.vue";
 import NButton from "./NButton.vue";
 import { Cpu, MemoryStick, HardDrive } from "lucide-vue-next";
-import { normalizeThresholds } from "@/utils/alertThresholds";
-
-export interface AlertThresholds {
-  cpu_warn: number;
-  cpu_crit: number;
-  ram_warn: number;
-  ram_crit: number;
-  disk_warn: number;
-  disk_crit: number;
-}
+import { normalizeThresholds, type AlertThresholds } from "@/utils/alertThresholds";
 
 const props = defineProps<{ open: boolean; modelValue: AlertThresholds }>();
 const emit = defineEmits<{

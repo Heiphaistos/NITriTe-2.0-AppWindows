@@ -25,7 +25,10 @@ jobs:
       - run: npm ci
       # Audit npm — bloque si vulnérabilité critique détectée
       - run: npm audit --audit-level=critical
-      - run: npx tsc --noEmit
+      # vue-tsc et non tsc : `tsc` ignore les SFC (shim `*.vue` = export par
+      # defaut seulement), donc tout type declare dans un `<script setup>`
+      # passait sous le radar de la CI.
+      - run: npx vue-tsc --noEmit
 
   test:
     name: Unit Tests

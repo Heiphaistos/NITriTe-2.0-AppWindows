@@ -11,7 +11,8 @@ import NCard from "@/components/ui/NCard.vue";
 import NButton from "@/components/ui/NButton.vue";
 import NProgress from "@/components/ui/NProgress.vue";
 import NBadge from "@/components/ui/NBadge.vue";
-import AlertThresholdsModal, { type AlertThresholds } from "@/components/ui/AlertThresholdsModal.vue";
+import AlertThresholdsModal from "@/components/ui/AlertThresholdsModal.vue";
+import type { AlertThresholds } from "@/utils/alertThresholds";
 import { normalizeThresholds } from "@/utils/alertThresholds";
 import type { SystemMonitorPayload, SysInfo, AppLogEntry, SystemHistory } from "@/types/diagnostic";
 import {

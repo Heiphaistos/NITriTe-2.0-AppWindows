@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeThresholds } from "@/utils/alertThresholds";
-import type { AlertThresholds } from "@/components/ui/AlertThresholdsModal.vue";
+import type { AlertThresholds } from "@/utils/alertThresholds";
 
 const DEFAULTS: AlertThresholds = {
   cpu_warn: 75, cpu_crit: 90,

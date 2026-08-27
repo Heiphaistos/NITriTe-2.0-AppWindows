@@ -1,4 +1,18 @@
-import type { AlertThresholds } from "@/components/ui/AlertThresholdsModal.vue";
+/**
+ * Seuils d'alerte CPU/RAM/disque. Defini ici plutot que dans
+ * `AlertThresholdsModal.vue` : `tsc --noEmit` (CI) ne sait pas lire un SFC,
+ * le shim `*.vue` ne declare qu'un export par defaut, donc importer un type
+ * depuis un `.vue` cassait la CI (TS2614). Bonus : supprime le cycle
+ * modal -> utils -> modal.
+ */
+export interface AlertThresholds {
+  cpu_warn: number;
+  cpu_crit: number;
+  ram_warn: number;
+  ram_crit: number;
+  disk_warn: number;
+  disk_crit: number;
+}
 
 const MIN = 50;
 const MAX = 100;
